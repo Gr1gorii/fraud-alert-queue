@@ -13,6 +13,25 @@ Una banca non può controllare ogni pagamento con carta: gli analisti ne esamina
 
 ![Risparmio netto per dimensione dell'organico](reports/figures/it/stage4_analyst_savings.png)
 
+## Il percorso di un pagamento
+
+Medie giornaliere sui 45 giorni di test per **Regola di blocco + modello con storico frodi** con 6 analisti; i valori sono arrotondati separatamente.
+
+```mermaid
+flowchart TD
+    A["Nuovi pagamenti con carta<br/>2.817 al giorno"] --> B{"Frode nota per questo cliente<br/>su un pagamento di almeno 30 giorni fa?"}
+    B -- "sì: 26" --> C["Blocco automatico<br/>15 frodi, 11 clienti legittimi"]
+    B -- "no: 2.792" --> D["LightGBM stima il rischio di frode<br/>pagamento + storico del cliente"]
+    D --> E["Ordinamento per punteggio"]
+    E -- "primi 360 = 6 analisti x 60" --> F["Controllo degli analisti<br/>63 frodi, 297 pagamenti legittimi"]
+    E -- "restanti: 2.432" --> G["Approvazione automatica<br/>frodi non fermate: USD 3.220"]
+    C --> H["Frodi fermate: USD 11.490 su 14.710 (78%)<br/>costi: USD 2.550<br/>risparmio netto: USD 8.940"]
+    F --> H
+    F & G -. "frodi confermate dopo almeno 30 giorni" .-> B
+```
+
+La freccia tratteggiata è l'unico ciclo di feedback: le frodi confermate alimentano la regola di blocco e il modello non viene riaddestrato durante il periodo di test.
+
 ## Come funziona
 
 1. Ho scelto una divisione temporale: gli ultimi 45 giorni servono per il test, separati dall'addestramento da 30 giorni di attesa per i chargeback tardivi. I 15 giorni prima di questo intervallo servono per la validazione e l'arresto anticipato.
@@ -40,6 +59,24 @@ L'organico viene scelto sugli stessi giorni di test usati per misurare il rispar
 ## Esecuzione
 
 Serve Python 3.12 o successivo. I due CSV di addestramento della competizione vanno in `data/raw/`; punteggi e spiegazioni si preparano offline, senza addestrare modelli nell'app.
+
+`src.run_stage3` coordina il caricamento, lo storico dei clienti, la divisione e l'addestramento, salvandone i risultati; gli script successivi usano questi file.
+
+```mermaid
+flowchart LR
+    A["CSV di addestramento Kaggle"] --> B["src/load.py"]
+    B -- "dati uniti; train.parquet" --> C["src/features.py"]
+    C -- "storico clienti; train_stage3.parquet" --> D["src/split.py"]
+    D -- "addestramento / validazione / test" --> E["src/train.py<br/>src/run_stage3.py"]
+    E -- "punteggi + tabella delle variabili" --> F["src/policy.py<br/>src/run_stage4.py<br/>blocco, controllo, approvazione + costi USD"]
+    F -- "CSV dei risultati e dei costi" --> G["src/make_reports.py<br/>rapporti + grafici"]
+    E -- "punteggi + CSV delle metriche<br/>variabili clienti + schema originale" --> G
+    E -- "variabili + punteggi<br/>modello + categorie" --> H["src/explain.py"]
+    F -- "stage4_decisions.parquet" --> I["app.py"]
+    H -- "stage5_explanations.parquet" --> I
+```
+
+`src.make_reports` aggiorna i rapporti e i grafici in inglese e italiano a partire dai risultati salvati.
 
 ```sh
 cd ~/Projects/fraud-alert-queue
