@@ -2,6 +2,8 @@
 
 # Client history results
 
+I measure `TransactionAmt` in USD.
+
 I compare three fixed models for a daily fraud review queue using 590,540 transactions.
 I get **PR-AUC 0.5864 with Model C (+26.0% relative to A)** and catch **42.92%** of daily fraud amount when I review 3% of transactions.
 

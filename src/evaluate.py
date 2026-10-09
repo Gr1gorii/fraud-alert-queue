@@ -220,6 +220,7 @@ def _axes(title, xlabel, ylabel):
     ax.grid(axis="y", color="#D9D9D9", linewidth=0.7)
     ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
+    fig.text(0.99, 0.01, "TransactionAmt (USD)", ha="right", fontsize=8, color="#666666")
     return fig, ax
 
 
@@ -228,7 +229,7 @@ def _save(fig, path):
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(path, dpi=FIGURE_DPI, facecolor="white")
     plt.close(fig)
 

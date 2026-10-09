@@ -117,6 +117,7 @@ def report_text(results, summaries, row_count, feature_count, language, absolute
         return f"""# Baseline results
 
 I compare two splits for a daily fraud review queue using {row_count:,} transactions.
+I measure `TransactionAmt` in USD.
 
 {table}
 
@@ -159,6 +160,7 @@ I use these package versions: {runtime}.
     return f"""# Risultati del modello di base
 
 Io confronto due divisioni dei dati per una coda giornaliera di controlli antifrode su {number} transazioni.
+Uso importi in USD per `TransactionAmt`.
 
 {table}
 
@@ -221,6 +223,7 @@ python -m unittest discover -s tests -v
 # Fraud alert queue
 
 I rank transactions for a daily fraud review queue with a fixed LightGBM model.
+I measure `TransactionAmt` in USD.
 
 **PR-AUC: {time_pr} time, {random_pr} random.** At 3% of each day's test volume, I catch **{amount}** of daily fraud amount with **{precision} precision** on the time test.
 
@@ -254,6 +257,7 @@ I use data from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.ka
 # Coda degli avvisi di frode
 
 Io ordino le transazioni per una coda giornaliera di controlli antifrode con un modello LightGBM a parametri fissi.
+Uso importi in USD per `TransactionAmt`.
 
 **PR-AUC: {time_pr} temporale, {random_pr} casuale.** Controllando il 3% delle transazioni di test di ogni giorno intercetto il **{amount}** degli importi fraudolenti giornalieri, con una **precisione del {precision}** sul test temporale.
 
@@ -326,7 +330,7 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
         suffix = "" if language == "en" else ".it"
         text = report_text(results, summaries, len(df), feature_count, language, absolute)
         (reports_dir / f"baseline_metrics{suffix}.md").write_text(text, encoding="utf-8")
-        if not (reports_dir / "stage3_metrics.md").is_file():
+        if not any((reports_dir / name).is_file() for name in ("stage3_metrics.md", "stage4_policy.md")):
             (project_root / f"README{suffix}.md").write_text(readme_text(results, language), encoding="utf-8")
     table = metrics_table(results)
     print("\n" + table, flush=True)

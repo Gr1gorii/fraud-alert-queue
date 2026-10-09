@@ -1,5 +1,7 @@
 # Risultati del modello di base
 
+Uso importi in USD per `TransactionAmt`.
+
 Io confronto due divisioni dei dati per una coda giornaliera di controlli antifrode su 590.540 transazioni.
 
 | Metrica | Divisione temporale | Divisione casuale |

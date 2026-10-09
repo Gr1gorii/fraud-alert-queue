@@ -155,6 +155,7 @@ def _report(ablation, segments, sanity, summaries, feature_count, absolute, lang
 # Client history results
 
 I compare three fixed models for a daily fraud review queue using {count} transactions.
+I measure `TransactionAmt` in USD.
 I get **PR-AUC {pr} with Model C ({gain} relative to A)** and catch **{caught}** of daily fraud amount when I review 3% of transactions.
 
 {table}
@@ -202,6 +203,7 @@ I use data from the Kaggle IEEE-CIS Fraud Detection competition; I do not includ
 # Risultati dello storico del cliente
 
 Confronto tre modelli a parametri fissi per una coda giornaliera di controlli antifrode su {count} transazioni.
+Uso importi in USD per `TransactionAmt`.
 Ottengo **PR-AUC {pr} con il Modello C ({gain} rispetto ad A)** e intercetto il **{caught}** degli importi fraudolenti giornalieri controllando il 3% delle transazioni.
 
 {table}
@@ -275,6 +277,7 @@ python -m unittest discover -s tests -v
 # Fraud alert queue
 
 I rank transactions for a daily fraud review queue with fixed LightGBM models.
+I measure `TransactionAmt` in USD.
 
 **Model C PR-AUC: {pr} ({gain} relative to A).** At a 3% daily review share, I catch **{caught}** of daily fraud amount with **{precision} precision**.
 
@@ -306,6 +309,7 @@ I use data from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.ka
 # Coda degli avvisi di frode
 
 Ordino le transazioni per una coda giornaliera di controlli antifrode con modelli LightGBM a parametri fissi.
+Uso importi in USD per `TransactionAmt`.
 
 **PR-AUC del Modello C: {pr} ({gain} rispetto ad A).** Con una quota giornaliera di controlli del 3% intercetto il **{caught}** degli importi fraudolenti, con una **precisione del {precision}**.
 
@@ -343,6 +347,7 @@ def write_stage3_reports(project_root, baseline_results, ablation, segments, san
         suffix = "" if language == "en" else ".it"
         text = _report(ablation, segments, sanity, summaries, feature_count, absolute, language)
         (reports / f"stage3_metrics{suffix}.md").write_text(text, encoding="utf-8")
-        text = _readme(baseline_results, ablation, language)
-        (project_root / f"README{suffix}.md").write_text(text, encoding="utf-8")
+        if not (reports / "stage4_policy.md").is_file():
+            text = _readme(baseline_results, ablation, language)
+            (project_root / f"README{suffix}.md").write_text(text, encoding="utf-8")
     return ablation_table(ablation), segment_table(segments)

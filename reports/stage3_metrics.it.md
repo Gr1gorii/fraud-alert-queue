@@ -2,6 +2,8 @@
 
 # Risultati dello storico del cliente
 
+Uso importi in USD per `TransactionAmt`.
+
 Confronto tre modelli a parametri fissi per una coda giornaliera di controlli antifrode su 590.540 transazioni.
 Ottengo **PR-AUC 0,5864 con il Modello C (+26,0% rispetto ad A)** e intercetto il **42,92%** degli importi fraudolenti giornalieri controllando il 3% delle transazioni.
 

@@ -1,5 +1,7 @@
 # Baseline results
 
+I measure `TransactionAmt` in USD.
+
 I compare two splits for a daily fraud review queue using 590,540 transactions.
 
 | Metric | Time split | Random split |
