@@ -3,6 +3,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from .display import model_name
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -220,7 +222,6 @@ def _axes(title, xlabel, ylabel):
     ax.grid(axis="y", color="#D9D9D9", linewidth=0.7)
     ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
-    fig.text(0.99, 0.01, "TransactionAmt (USD)", ha="right", fontsize=8, color="#666666")
     return fig, ax
 
 
@@ -229,7 +230,7 @@ def _save(fig, path):
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.tight_layout()
     fig.savefig(path, dpi=FIGURE_DPI, facecolor="white")
     plt.close(fig)
 
@@ -269,15 +270,15 @@ def _ranking_figure(results, path, title, xlabel, ylabel, labels):
 def _ranking_titles(time_pr, random_pr):
     if np.isfinite(time_pr) and np.isfinite(random_pr) and time_pr > 0:
         change = (random_pr / time_pr - 1) * 100
-        direction_en = "higher" if change >= 0 else "lower"
-        direction_it = "alto" if change >= 0 else "basso"
+        direction_en = "overstates" if change >= 0 else "understates"
+        direction_it = "sovrastima" if change >= 0 else "sottostima"
         return {
-            "en": f"I get {abs(change):.0f}% {direction_en} PR-AUC with the random split",
-            "it": f"Ottengo un PR-AUC più {direction_it} del {abs(change):.0f}% con la divisione casuale",
+            "en": f"Random split {direction_en} PR-AUC by {abs(change):.0f}%",
+            "it": f"La divisione casuale {direction_it} il PR-AUC del {abs(change):.0f}%",
         }
     return {
-        "en": "I have no defined PR-AUC comparison",
-        "it": "Non ho un confronto PR-AUC definito",
+        "en": "PR-AUC comparison is unavailable",
+        "it": "Confronto PR-AUC non disponibile",
     }
 
 
@@ -292,24 +293,24 @@ def _figure_text(results):
     texts = {
         "en": {
             "labels": {"time": "Time split", "random": "Random split"},
-            "capacity_title": f"I catch {capture:.1f}% of fraud amount with a 3% daily review share",
-            "precision_title": f"I get {precision:.1f}% precision with a 3% daily review share",
+            "capacity_title": f"Reviewing 3% of payments catches {capture:.1f}% of fraud value",
+            "precision_title": f"Reviewing 3% of payments gives {precision:.1f}% precision",
             "capacity_x": "Daily review share (% of test transactions)",
             "capacity_y": "Mean daily fraud amount caught (%)",
             "precision_y": "Mean daily precision (%)",
-            "ranking_x": "Ranking metric (unitless)",
-            "ranking_y": "Score (unitless fraction)",
+            "ranking_x": "Ranking metric",
+            "ranking_y": "Value",
             "ranking_title": titles["en"],
         },
         "it": {
             "labels": {"time": "Divisione temporale", "random": "Divisione casuale"},
-            "capacity_title": f"Con il 3% delle transazioni giornaliere intercetto il {capture_it}% dell'importo fraudolento",
-            "precision_title": f"Con il 3% delle transazioni giornaliere ottengo una precisione del {precision_it}%",
+            "capacity_title": f"Il controllo del 3% dei pagamenti intercetta il {capture_it}% delle frodi per importo",
+            "precision_title": f"Il controllo del 3% dei pagamenti dà una precisione del {precision_it}%",
             "capacity_x": "Quota giornaliera di controllo (% delle transazioni in test)",
             "capacity_y": "Importo fraudolento intercettato: media giornaliera (%)",
             "precision_y": "Precisione media giornaliera (%)",
-            "ranking_x": "Metrica di ordinamento (senza unità)",
-            "ranking_y": "Valore (frazione senza unità)",
+            "ranking_x": "Metrica di ordinamento",
+            "ranking_y": "Valore",
             "ranking_title": titles["it"],
         },
     }
@@ -345,32 +346,34 @@ def _stage3_text(results, segments):
     direction_it = "in più" if difference >= 0 else "in meno"
     text = {
         "en": {
-            "capacity_title": f"I catch {caught:.1f}% of fraud amount with C at a 3% daily share",
-            "caught_title": f"I catch {abs(difference):.1f} percentage points {direction_en} with C than A at a 3% share",
+            "capacity_title": f"Client and fraud history catches {caught:.1f}% of fraud value at a 3% review share",
+            "caught_title": f"Client and fraud history catches {abs(difference):.1f} points {direction_en} than raw features",
             "capacity_x": "Daily review share (% of test transactions)",
             "amount_y": "Mean daily fraud amount caught (%)",
-            "caught_x": "Model (unitless)",
-            "segments_x": "Client segment (unitless)",
+            "caught_x": "Features",
+            "segments_x": "Client segment",
+            "model_labels": {name: model_name(name, "en") for name in ("A", "B", "C")},
             "segment_labels": ("New clients", "Returning clients"),
         },
         "it": {
-            "capacity_title": f"Con C intercetto il {caught_it}% dell'importo fraudolento con una quota giornaliera del 3%",
-            "caught_title": f"Con una quota del 3% intercetto {difference_it} punti percentuali {direction_it} con C rispetto ad A",
+            "capacity_title": f"Storico e frodi note intercettano il {caught_it}% degli importi al 3% di controlli",
+            "caught_title": f"Storico e frodi note intercettano {difference_it} punti {direction_it} delle variabili grezze",
             "capacity_x": "Quota giornaliera di controllo (% delle transazioni in test)",
             "amount_y": "Importo fraudolento intercettato: media giornaliera (%)",
-            "caught_x": "Modello (senza unità)",
-            "segments_x": "Gruppo di clienti (senza unità)",
+            "caught_x": "Variabili",
+            "segments_x": "Gruppo di clienti",
+            "model_labels": {name: model_name(name, "it") for name in ("A", "B", "C")},
             "segment_labels": ("Nuovi clienti", "Clienti già visti"),
         },
     }
     if np.isfinite(new) and np.isfinite(returning):
-        text["en"]["segments_title"] = f"I catch {new:.1f}% for new and {returning:.1f}% for returning clients with C"
+        text["en"]["segments_title"] = f"Fraud history catches {new:.1f}% for new and {returning:.1f}% for returning clients"
         new_it = f"{new:.1f}".replace(".", ",")
         returning_it = f"{returning:.1f}".replace(".", ",")
-        text["it"]["segments_title"] = f"Con C intercetto il {new_it}% per i nuovi clienti e il {returning_it}% per quelli già visti"
+        text["it"]["segments_title"] = f"Le frodi note intercettano il {new_it}% per clienti nuovi e il {returning_it}% per quelli già visti"
     else:
-        text["en"]["segments_title"] = "I cannot measure fraud amount caught for every client segment"
-        text["it"]["segments_title"] = "Non posso misurare l'importo intercettato per ogni gruppo di clienti"
+        text["en"]["segments_title"] = "Fraud capture is unavailable for a client segment"
+        text["it"]["segments_title"] = "Importo intercettato non disponibile per un gruppo di clienti"
     return text
 
 
@@ -381,7 +384,7 @@ def _stage3_capacity(results, path, text):
     for name in ("A", "B", "C"):
         curve = results[name]["capacity_curve"].sort_values("share")
         ax.plot(
-            curve["share"], curve["fraud_amount_caught"], label=name,
+            curve["share"], curve["fraud_amount_caught"], label=text["model_labels"][name],
             color=STAGE3_COLORS[name], linestyle=STAGE3_STYLES[name], linewidth=2,
         )
     ax.set(xlim=(0.01, 0.2), ylim=(0, 1.02))
@@ -399,7 +402,7 @@ def _stage3_caught(results, path, text):
     for x, name in enumerate(("A", "B", "C")):
         value = results[name]["metrics"]["fraud_amount_caught@3%"]
         ax.bar(x, value, color=STAGE3_COLORS[name], width=0.6)
-    ax.set_xticks(range(3), ("A", "B", "C"))
+    ax.set_xticks(range(3), [text["model_labels"][name].replace(" + known fraud", "\n+ known fraud").replace(" + frodi note", "\n+ frodi note") for name in ("A", "B", "C")])
     ax.set_ylim(0, 1.02)
     ax.yaxis.set_major_formatter(PercentFormatter(xmax=1))
     _save(fig, path)
@@ -415,7 +418,7 @@ def _stage3_segments(segments, path, text):
             segments[name][segment]["metrics"]["fraud_amount_caught@3%"]
             for segment in ("new", "returning")
         ]
-        ax.bar(x + offset, values, width=0.25, color=STAGE3_COLORS[name], label=name)
+        ax.bar(x + offset, values, width=0.25, color=STAGE3_COLORS[name], label=text["model_labels"][name])
     ax.set_xticks(x, text["segment_labels"])
     ax.set_ylim(0, 1.02)
     ax.yaxis.set_major_formatter(PercentFormatter(xmax=1))
@@ -431,8 +434,8 @@ def _time_random_pr(comparison, path, language):
         "en": ("Time split", "Random split"),
         "it": ("Divisione temporale", "Divisione casuale"),
     }
-    xlabel = "Split (unitless)" if language == "en" else "Divisione (senza unità)"
-    ylabel = "PR-AUC (unitless fraction)" if language == "en" else "PR-AUC (frazione senza unità)"
+    xlabel = "Split" if language == "en" else "Divisione"
+    ylabel = "PR-AUC"
     fig, ax = _axes(titles[language], xlabel, ylabel)
     ax.bar(
         range(2), [time["pr_auc"], random["pr_auc"]],

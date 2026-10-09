@@ -1,8 +1,8 @@
+[English](baseline_metrics.md) | [Italiano](baseline_metrics.it.md)
+
 # Risultati del modello di base
 
-Uso importi in USD per `TransactionAmt`.
-
-Io confronto due divisioni dei dati per una coda giornaliera di controlli antifrode su 590.540 transazioni.
+590.540 transazioni, importi in USD e 432 variabili grezze. Il PR-AUC della divisione casuale varia del **+65,26%** rispetto a quella temporale.
 
 | Metrica | Divisione temporale | Divisione casuale |
 | --- | ---: | ---: |
@@ -18,38 +18,35 @@ Io confronto due divisioni dei dati per una coda giornaliera di controlli antifr
 | Importo intercettato @5% | 41,73% | 74,30% |
 | Precisione@5% | 35,59% | 53,68% |
 
-![Misuro gli importi fraudolenti intercettati](figures/it/capacity_curve.png)
-![Misuro la precisione giornaliera](figures/it/precision_curve.png)
-![Confronto le metriche di ordinamento](figures/it/ranking_metrics.png)
+![Importi fraudolenti intercettati ogni giorno](figures/it/capacity_curve.png)
+![Precisione giornaliera dei controlli](figures/it/precision_curve.png)
+![Metriche di ordinamento per divisione](figures/it/ranking_metrics.png)
 
 ## Dati di test
 
-Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calcolo `day = TransactionDT // 86400`.
+Gli intervalli dei giorni sono inclusivi e relativi al dataset: `day = TransactionDT // 86400`.
 
 | Divisione | Righe di addestramento (giorni) | Righe di validazione (giorni) | Righe escluse (giorni) | Righe di test (giorni) | Iterazione scelta |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Temporale | 326.186 (1-92) | 48.476 (93-107) | 89.100 (108-137) | 126.778 (138-182) | 482 |
 | Casuale | 439.891 (1-167) | 32.541 (168-182) | 0 (-) | 118.108 (1-182) | 345 |
 
-- Valuto 45 giorni per la divisione temporale: 45 hanno importi fraudolenti positivi. Osservo in media 2817,3 transazioni di test/giorno.
-- Valuto 182 giorni per la divisione casuale: 182 hanno importi fraudolenti positivi. Osservo in media 648,9 transazioni di test/giorno.
+- Temporale: 45 giorni di test, 45 con importi fraudolenti positivi; in media 2.817,3 pagamenti di test/giorno.
+- Casuale: 182 giorni di test, 182 con importi fraudolenti positivi; in media 648,9 pagamenti di test/giorno.
 
 ## Metodo
 
-- Riservo gli ultimi 45 giorni al test, escludo i 30 giorni precedenti per il ritardo dei chargeback e uso i 15 giorni ancora precedenti per la validazione. Addestro il modello sulle righe più vecchie.
-- Confronto una divisione casuale 80/20, stratificata per il target e con seme fisso. Riservo alla validazione gli ultimi 15 giorni dell'80% dei dati riservato allo sviluppo. In questo confronto non applico l'intervallo per il ritardo delle etichette.
-- Uso 432 variabili originali. Escludo `isFraud`, `TransactionID` e `day`; mantengo `TransactionDT`. Imparo le categorie solo dall'addestramento e tratto quelle sconosciute come mancanti. Non creo nuove variabili e non ottimizzo gli iperparametri.
-- Uso i parametri predefiniti di LightGBM, seme 42 e un massimo di 1000 iterazioni. Mi fermo dopo 50 iterazioni senza miglioramenti nell'AP di validazione. Non uso il test per l'addestramento o l'arresto anticipato.
-- Ordino le transazioni di ogni giorno per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `ceil(quota * righe di test giornaliere)` transazioni. Uso K assoluto solo per la divisione temporale.
-- Divido l'importo fraudolento intercettato per l'intero importo fraudolento del giorno e calcolo la media dei rapporti con pesi uguali. Escludo i giorni con importo fraudolento nullo e mantengo `TransactionAmt` in float64.
-- Per la precisione divido le frodi selezionate per le transazioni controllate e calcolo la media su tutti i giorni osservati. Escludo i giorni senza transazioni di test.
-- Calcolo PR-AUC a trapezi, AP e ROC-AUC sull'intero insieme di test. Riporto l'AP separatamente dal PR-AUC.
+- Riservo gli ultimi 45 giorni al test, escludo i 30 giorni precedenti per i chargeback tardivi e uso 15 giorni di validazione subito prima dell'attesa. Le transazioni anteriori formano l'addestramento.
+- Il confronto usa una divisione casuale 80/20, stratificata per il target e con seme fisso. La validazione occupa gli ultimi 15 giorni dei dati di sviluppo, senza intervallo di attesa.
+- Gli input grezzi escludono `isFraud`, `TransactionID` e `day`; conservano `TransactionDT`. Le categorie sono apprese soltanto dall'addestramento e i valori sconosciuti restano mancanti. Non vengono aggiunte variabili o ottimizzati parametri.
+- Restano fissi parametri predefiniti di LightGBM, seme 42, massimo 1000 iterazioni e arresto dopo 50 iterazioni senza miglioramenti nell'AP di validazione. Il test non determina addestramento o arresto anticipato.
+- L'ordine giornaliero usa punteggi decrescenti e ID crescenti a parità di punteggio. Il budget è `ceil(quota * righe giornaliere di test)`. I conteggi assoluti sono confrontati soltanto nella divisione temporale.
+- Quote degli importi fraudolenti in USD e precisioni sono medie a pesi giornalieri uguali. I giorni senza importi fraudolenti sono esclusi dalle medie di intercettazione. Gli importi conservano la precisione float64.
+- PR-AUC a trapezi, precisione media e ROC-AUC usano tutto il test. L'AP è riportato separatamente dal PR-AUC.
 
 ## Confronto
 
-Ottengo un PR-AUC più alto del 65,3% con la divisione casuale. Addestro il modello su transazioni successive ad alcune righe di test, condivido giorni fra le partizioni e non applico il ritardo delle etichette.
-Confronto la stessa quota di ogni coda giornaliera di test e arrotondo il numero dei controlli per eccesso.
-Confronto comunque periodi e dimensioni di addestramento diversi; non attribuisco la differenza soltanto all'uso di informazioni future.
+La divisione casuale addestra su alcune transazioni successive al test, condivide giorni fra le partizioni e non applica l'attesa delle etichette. Le quote di controllo sono confrontabili; periodi e dimensioni di addestramento differiscono. L'intera differenza di prestazioni non è attribuibile al solo uso di informazioni future.
 
 ## Capacità assoluta sulla divisione temporale
 
@@ -60,6 +57,6 @@ Confronto comunque periodi e dimensioni di addestramento diversi; non attribuisc
 | 200 | 50,61% | 28,30% |
 | 500 | 69,74% | 14,48% |
 
-Salvo le metriche giornaliere per quota e le curve nei CSV accanto al rapporto. Mantengo i CSV con capacità assoluta solo per la divisione temporale.
-Uso i dati della competizione Kaggle IEEE-CIS Fraud Detection; non includo i dati nel repository.
-Uso queste versioni dei pacchetti: numpy 2.5.3, pandas 2.3.3, pyarrow 24.0.0, scikit-learn 1.9.1, lightgbm 4.7.0, matplotlib 3.11.2.
+Aggregati salvati: [metriche temporali giornaliere](time_daily_metrics.csv), [metriche casuali giornaliere](random_daily_metrics.csv), [quote temporali](time_capacity_curve.csv) e [quote casuali](random_capacity_curve.csv).
+I dati provengono da Kaggle IEEE-CIS Fraud Detection e non sono inclusi nel repository.
+Versioni dei pacchetti: numpy 2.5.3, pandas 2.3.3, pyarrow 24.0.0, scikit-learn 1.9.1, lightgbm 4.7.0, matplotlib 3.11.2.

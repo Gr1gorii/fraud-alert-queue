@@ -89,45 +89,37 @@ def report_text(results, summaries, row_count, feature_count, language, absolute
     absolute_text = absolute_table(absolute, language) if absolute is not None else ""
     time_pr = results["time"]["metrics"]["pr_auc"]
     random_pr = results["random"]["metrics"]["pr_auc"]
-    comparison = "I have no defined PR-AUC comparison."
-    comparison_it = "Non ho un confronto PR-AUC definito."
-    if np.isfinite(time_pr) and np.isfinite(random_pr) and time_pr > 0:
-        gain = 100 * (random_pr / time_pr - 1)
-        direction = "higher" if gain >= 0 else "lower"
-        direction_it = "alto" if gain >= 0 else "basso"
-        change_it = f"{abs(gain):.1f}".replace(".", ",")
-        comparison = f"I get {abs(gain):.1f}% {direction} PR-AUC with the random split."
-        comparison_it = f"Ottengo un PR-AUC più {direction_it} del {change_it}% con la divisione casuale."
+    change = 100 * (random_pr / time_pr - 1) if np.isfinite(time_pr) and time_pr > 0 else np.nan
+    comparison = f"{change:+.2f}%" if language == "en" else f"{change:+.2f}%".replace(".", ",")
     runtime = ", ".join(f"{package} {version(package)}" for package in PACKAGES)
     notes = []
     for name, result in results.items():
         daily = result["daily_metrics"]
-        eligible = int((daily.total_fraud_amount > 0).sum())
-        mean = daily.transaction_count.mean()
+        eligible = int(daily["total_fraud_amount"].gt(0).sum())
+        mean = daily["transaction_count"].mean()
         if language == "en":
-            notes.append(f"- I evaluate {len(daily)} {name} test days, including {eligible} "
-                         f"with positive fraud amount. I average {mean:,.1f} test transactions/day.")
+            notes.append(f"- {SPLIT_NAMES[language][name]}: {len(daily)} test days, {eligible} with positive fraud amount; {mean:,.1f} test payments/day on average.")
         else:
-            average = f"{mean:.1f}".replace(".", ",")
-            notes.append(f"- Valuto {len(daily)} giorni per la divisione "
-                         f"{SPLIT_NAMES['it'][name].lower()}: {eligible} hanno importi "
-                         f"fraudolenti positivi. Osservo in media {average} transazioni di test/giorno.")
+            average = f"{mean:,.1f}".translate(str.maketrans(",.", ".,"))
+            notes.append(f"- {SPLIT_NAMES[language][name]}: {len(daily)} giorni di test, {eligible} con importi fraudolenti positivi; in media {average} pagamenti di test/giorno.")
     day_notes = "\n".join(notes)
+    links = "[English](baseline_metrics.md) | [Italiano](baseline_metrics.it.md)"
     if language == "en":
-        return f"""# Baseline results
+        return f"""{links}
 
-I compare two splits for a daily fraud review queue using {row_count:,} transactions.
-I measure `TransactionAmt` in USD.
+# Baseline results
+
+{row_count:,} transactions, amounts in USD, and {feature_count} raw features. Random-split PR-AUC changes by **{comparison}** relative to the time split.
 
 {table}
 
-![I measure daily fraud amount capture](figures/en/capacity_curve.png)
-![I measure daily precision](figures/en/precision_curve.png)
-![I compare ranking scores](figures/en/ranking_metrics.png)
+![Daily fraud amount caught](figures/en/capacity_curve.png)
+![Daily review precision](figures/en/precision_curve.png)
+![Ranking metrics by split](figures/en/ranking_metrics.png)
 
 ## Test coverage
 
-I show row counts and inclusive relative day ranges. I calculate `day = TransactionDT // 86400`.
+Day ranges are inclusive and relative to the dataset: `day = TransactionDT // 86400`.
 
 {coverage}
 
@@ -135,42 +127,40 @@ I show row counts and inclusive relative day ranges. I calculate `day = Transact
 
 ## Method
 
-- I reserve the last 45 days for test, drop the previous 30 days for delayed chargeback labels, and use the previous 15 days for validation. I fit on earlier rows.
-- I compare a seeded, target-stratified 80/20 random split. I use the last 15 days of its 80% development pool for validation and apply no delay gap.
-- I use {feature_count} raw features. I exclude `isFraud`, `TransactionID`, and `day`; I retain `TransactionDT`. I fit categories on fitting rows only and treat unknown categories as missing. I add no features and perform no tuning.
-- I use LightGBM defaults, seed {RANDOM_SEED}, and at most {MAX_ESTIMATORS} iterations. I stop after {EARLY_STOPPING_ROUNDS} rounds without improvement in validation AP. I never fit on test rows or use them for early stopping.
-- I rank each test day by score, with ascending `TransactionID` for ties. I review `ceil(share * daily test rows)` transactions for each share. I use absolute K only on the time split.
-- I divide captured fraud amount by all fraud amount that day, then average daily ratios equally. I exclude zero-fraud-amount days from this mean and keep `TransactionAmt` in float64.
-- I divide selected frauds by selected transactions for precision, then average over all observed test days. I exclude days without test transactions.
-- I calculate trapezoidal PR-AUC, AP, and ROC-AUC over the full test partition. I report AP separately from PR-AUC.
+- I reserve the last 45 days for test, drop the preceding 30 days for late chargebacks, and use 15 validation days immediately before the gap. Earlier transactions form the fitting partition.
+- The comparison is a seeded, target-stratified 80/20 random split. Validation uses the last 15 days of its development pool, with no delay gap.
+- Raw model inputs exclude `isFraud`, `TransactionID`, and `day`; `TransactionDT` is retained. Categories are fitted on training rows only, with unknown values treated as missing. No extra features or tuning are used.
+- LightGBM defaults, seed {RANDOM_SEED}, at most {MAX_ESTIMATORS} iterations, and early stopping after {EARLY_STOPPING_ROUNDS} rounds without validation AP improvement are fixed. Test rows never control fitting or early stopping.
+- Daily ranking uses score descending and transaction ID ascending for ties. Reviews use `ceil(share * daily test rows)`. Absolute counts are compared only within the time split.
+- Daily captured-fraud USD shares and precision are averaged equally across observed days. Zero-fraud-amount days are excluded from capture means. Amounts retain float64 precision.
+- Trapezoidal PR-AUC, average precision, and ROC-AUC use the whole test partition. AP is reported separately from PR-AUC.
 
 ## Comparison
 
-{comparison} I train on later transactions than some random test rows, share days across partitions, and omit the label-delay gap.
-I compare the same share of each daily test queue. I round the review count up to an integer.
-I still compare different periods and training sizes, so I cannot attribute the difference solely to temporal leakage.
+The random split fits some transactions later than its test rows, shares calendar days across partitions, and has no label-delay gap. Queue shares are comparable; calendar periods and fitting sizes differ. The entire gap in performance cannot be attributed solely to temporal leakage.
 
 {absolute_text}
 
-I save daily share metrics and curve values in the adjacent CSVs. I keep absolute-capacity CSVs only for the time split.
-I use data from the Kaggle IEEE-CIS Fraud Detection competition; I do not include the data in this repo.
-I use these package versions: {runtime}.
+Saved aggregates: [time daily metrics](time_daily_metrics.csv), [random daily metrics](random_daily_metrics.csv), [time capacity](time_capacity_curve.csv), and [random capacity](random_capacity_curve.csv).
+Data comes from Kaggle IEEE-CIS Fraud Detection and is not included in the repo.
+Runtime versions: {runtime}.
 """
-    number = f"{row_count:,}".replace(",", ".")
-    return f"""# Risultati del modello di base
+    count = f"{row_count:,}".replace(",", ".")
+    return f"""{links}
 
-Io confronto due divisioni dei dati per una coda giornaliera di controlli antifrode su {number} transazioni.
-Uso importi in USD per `TransactionAmt`.
+# Risultati del modello di base
+
+{count} transazioni, importi in USD e {feature_count} variabili grezze. Il PR-AUC della divisione casuale varia del **{comparison}** rispetto a quella temporale.
 
 {table}
 
-![Misuro gli importi fraudolenti intercettati](figures/it/capacity_curve.png)
-![Misuro la precisione giornaliera](figures/it/precision_curve.png)
-![Confronto le metriche di ordinamento](figures/it/ranking_metrics.png)
+![Importi fraudolenti intercettati ogni giorno](figures/it/capacity_curve.png)
+![Precisione giornaliera dei controlli](figures/it/precision_curve.png)
+![Metriche di ordinamento per divisione](figures/it/ranking_metrics.png)
 
 ## Dati di test
 
-Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calcolo `day = TransactionDT // 86400`.
+Gli intervalli dei giorni sono inclusivi e relativi al dataset: `day = TransactionDT // 86400`.
 
 {coverage}
 
@@ -178,37 +168,43 @@ Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calco
 
 ## Metodo
 
-- Riservo gli ultimi 45 giorni al test, escludo i 30 giorni precedenti per il ritardo dei chargeback e uso i 15 giorni ancora precedenti per la validazione. Addestro il modello sulle righe più vecchie.
-- Confronto una divisione casuale 80/20, stratificata per il target e con seme fisso. Riservo alla validazione gli ultimi 15 giorni dell'80% dei dati riservato allo sviluppo. In questo confronto non applico l'intervallo per il ritardo delle etichette.
-- Uso {feature_count} variabili originali. Escludo `isFraud`, `TransactionID` e `day`; mantengo `TransactionDT`. Imparo le categorie solo dall'addestramento e tratto quelle sconosciute come mancanti. Non creo nuove variabili e non ottimizzo gli iperparametri.
-- Uso i parametri predefiniti di LightGBM, seme {RANDOM_SEED} e un massimo di {MAX_ESTIMATORS} iterazioni. Mi fermo dopo {EARLY_STOPPING_ROUNDS} iterazioni senza miglioramenti nell'AP di validazione. Non uso il test per l'addestramento o l'arresto anticipato.
-- Ordino le transazioni di ogni giorno per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `ceil(quota * righe di test giornaliere)` transazioni. Uso K assoluto solo per la divisione temporale.
-- Divido l'importo fraudolento intercettato per l'intero importo fraudolento del giorno e calcolo la media dei rapporti con pesi uguali. Escludo i giorni con importo fraudolento nullo e mantengo `TransactionAmt` in float64.
-- Per la precisione divido le frodi selezionate per le transazioni controllate e calcolo la media su tutti i giorni osservati. Escludo i giorni senza transazioni di test.
-- Calcolo PR-AUC a trapezi, AP e ROC-AUC sull'intero insieme di test. Riporto l'AP separatamente dal PR-AUC.
+- Riservo gli ultimi 45 giorni al test, escludo i 30 giorni precedenti per i chargeback tardivi e uso 15 giorni di validazione subito prima dell'attesa. Le transazioni anteriori formano l'addestramento.
+- Il confronto usa una divisione casuale 80/20, stratificata per il target e con seme fisso. La validazione occupa gli ultimi 15 giorni dei dati di sviluppo, senza intervallo di attesa.
+- Gli input grezzi escludono `isFraud`, `TransactionID` e `day`; conservano `TransactionDT`. Le categorie sono apprese soltanto dall'addestramento e i valori sconosciuti restano mancanti. Non vengono aggiunte variabili o ottimizzati parametri.
+- Restano fissi parametri predefiniti di LightGBM, seme {RANDOM_SEED}, massimo {MAX_ESTIMATORS} iterazioni e arresto dopo {EARLY_STOPPING_ROUNDS} iterazioni senza miglioramenti nell'AP di validazione. Il test non determina addestramento o arresto anticipato.
+- L'ordine giornaliero usa punteggi decrescenti e ID crescenti a parità di punteggio. Il budget è `ceil(quota * righe giornaliere di test)`. I conteggi assoluti sono confrontati soltanto nella divisione temporale.
+- Quote degli importi fraudolenti in USD e precisioni sono medie a pesi giornalieri uguali. I giorni senza importi fraudolenti sono esclusi dalle medie di intercettazione. Gli importi conservano la precisione float64.
+- PR-AUC a trapezi, precisione media e ROC-AUC usano tutto il test. L'AP è riportato separatamente dal PR-AUC.
 
 ## Confronto
 
-{comparison_it} Addestro il modello su transazioni successive ad alcune righe di test, condivido giorni fra le partizioni e non applico il ritardo delle etichette.
-Confronto la stessa quota di ogni coda giornaliera di test e arrotondo il numero dei controlli per eccesso.
-Confronto comunque periodi e dimensioni di addestramento diversi; non attribuisco la differenza soltanto all'uso di informazioni future.
+La divisione casuale addestra su alcune transazioni successive al test, condivide giorni fra le partizioni e non applica l'attesa delle etichette. Le quote di controllo sono confrontabili; periodi e dimensioni di addestramento differiscono. L'intera differenza di prestazioni non è attribuibile al solo uso di informazioni future.
 
 {absolute_text}
 
-Salvo le metriche giornaliere per quota e le curve nei CSV accanto al rapporto. Mantengo i CSV con capacità assoluta solo per la divisione temporale.
-Uso i dati della competizione Kaggle IEEE-CIS Fraud Detection; non includo i dati nel repository.
-Uso queste versioni dei pacchetti: {runtime}.
+Aggregati salvati: [metriche temporali giornaliere](time_daily_metrics.csv), [metriche casuali giornaliere](random_daily_metrics.csv), [quote temporali](time_capacity_curve.csv) e [quote casuali](random_capacity_curve.csv).
+I dati provengono da Kaggle IEEE-CIS Fraud Detection e non sono inclusi nel repository.
+Versioni dei pacchetti: {runtime}.
 """
 
 
 def readme_text(results, language):
     time = results["time"]["metrics"]
     random = results["random"]["metrics"]
-    time_pr = format_number(time["pr_auc"], language)
-    random_pr = format_number(random["pr_auc"], language)
-    amount = format_number(time["fraud_amount_caught@3%"], language, True)
-    precision = format_number(time["precision@3%"], language, True)
-    links = "[English](README.md) | [Italiano](README.it.md)"
+    time_pr = f"{time['pr_auc']:.2f}"
+    random_pr = f"{random['pr_auc']:.2f}"
+    amount = f"{time['fraud_amount_caught@3%']:.0%}"
+    precision = f"{time['precision@3%']:.0%}"
+    if language == "it":
+        time_pr, random_pr = time_pr.replace(".", ","), random_pr.replace(".", ",")
+    title = "Fraud alert queue" if language == "en" else "Coda dei controlli antifrode"
+    introduction = ("A bank cannot review every payment. A fixed daily queue ranks the most suspicious transactions." if language == "en"
+                    else "Una banca non può controllare ogni pagamento. Una coda giornaliera ordina le transazioni più sospette.")
+    headline = (f"PR-AUC: {time_pr} time and {random_pr} random. Reviewing 3% of payments catches {amount} of daily fraud amount in USD, with {precision} precision." if language == "en"
+                else f"PR-AUC: {time_pr} temporale e {random_pr} casuale. Il controllo del 3% dei pagamenti intercetta il {amount} degli importi fraudolenti in USD al giorno, con precisione {precision}.")
+    captions = ("Fraud amount caught", "Review precision", "Ranking metrics") if language == "en" else ("Importi fraudolenti intercettati", "Precisione dei controlli", "Metriche di ordinamento")
+    filenames = ("capacity_curve.png", "precision_curve.png", "ranking_metrics.png")
+    images = "\n".join(f"![{caption}](reports/figures/{language}/{filename})" for caption, filename in zip(captions, filenames))
     run = """```sh
 cd ~/Projects/fraud-alert-queue
 python3.12 -m venv .venv
@@ -217,75 +213,11 @@ python -m pip install -r requirements.txt
 python -m src.run_baseline
 python -m unittest discover -s tests -v
 ```"""
-    if language == "en":
-        return f"""{links}
-
-# Fraud alert queue
-
-I rank transactions for a daily fraud review queue with a fixed LightGBM model.
-I measure `TransactionAmt` in USD.
-
-**PR-AUC: {time_pr} time, {random_pr} random.** At 3% of each day's test volume, I catch **{amount}** of daily fraud amount with **{precision} precision** on the time test.
-
-![I measure fraud amount caught at each daily capacity](reports/figures/en/capacity_curve.png)
-![I compare precision at each daily capacity](reports/figures/en/precision_curve.png)
-![I compare test ranking scores](reports/figures/en/ranking_metrics.png)
-
-## Method
-
-I reserve 45 days for test, drop the preceding 30 days for delayed chargeback labels, and use the preceding 15 days for validation. I fit on earlier rows.
-I use raw features, train-only categories, seed 42, and validation-only early stopping. I add no features and perform no tuning.
-
-I compare a stratified random 80/20 split, with validation inside the 80% development pool.
-I use the same share of daily test volume for both splits and round the number of reviews up. I compare different periods and training sizes, so I cannot attribute the difference solely to temporal leakage.
-
-## Run
-
-I use Python 3.12+ and put `train_transaction.csv` and `train_identity.csv` in `data/raw/`.
-
-{run}
-
-On macOS, I install `libomp` with Homebrew if LightGBM needs it.
-I rebuild `data/processed/train.parquet` on each run and save [English results](reports/baseline_metrics.md), [Italian results](reports/baseline_metrics.it.md), daily CSVs, and figures.
-
-## Data
-
-I use data from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data); I do not include the data in this repo.
-"""
-    return f"""{links}
-
-# Coda degli avvisi di frode
-
-Io ordino le transazioni per una coda giornaliera di controlli antifrode con un modello LightGBM a parametri fissi.
-Uso importi in USD per `TransactionAmt`.
-
-**PR-AUC: {time_pr} temporale, {random_pr} casuale.** Controllando il 3% delle transazioni di test di ogni giorno intercetto il **{amount}** degli importi fraudolenti giornalieri, con una **precisione del {precision}** sul test temporale.
-
-![Misuro gli importi intercettati per ogni capacità giornaliera](reports/figures/it/capacity_curve.png)
-![Confronto la precisione per ogni capacità giornaliera](reports/figures/it/precision_curve.png)
-![Confronto le metriche di ordinamento sul test](reports/figures/it/ranking_metrics.png)
-
-## Metodo
-
-Riservo 45 giorni al test, escludo i 30 giorni precedenti per il ritardo dei chargeback e uso i 15 giorni ancora precedenti per la validazione. Addestro il modello sulle righe più vecchie.
-Uso le variabili originali, imparo le categorie solo dall'addestramento e fisso il seme a 42. Per l'arresto anticipato uso solo la validazione. Non creo nuove variabili e non ottimizzo gli iperparametri.
-
-Confronto una divisione casuale 80/20 stratificata, con la validazione ricavata dall'80% dei dati riservato allo sviluppo.
-Uso la stessa quota del volume giornaliero di test per entrambe le divisioni, arrotondando i controlli per eccesso. Confronto periodi e dimensioni di addestramento diversi; non attribuisco la differenza soltanto all'uso di informazioni future.
-
-## Esecuzione
-
-Uso Python 3.12+ e inserisco `train_transaction.csv` e `train_identity.csv` in `data/raw/`.
-
-{run}
-
-Su macOS installo `libomp` con Homebrew se LightGBM lo richiede.
-A ogni esecuzione ricostruisco `data/processed/train.parquet` e salvo i [risultati in inglese](reports/baseline_metrics.md), i [risultati in italiano](reports/baseline_metrics.it.md), i CSV giornalieri e i grafici.
-
-## Dati
-
-Uso i dati della [competizione Kaggle IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection/data); non includo i dati nel repository.
-"""
+    note = ("Data comes from Kaggle IEEE-CIS Fraud Detection and is not included in the repo." if language == "en"
+            else "I dati provengono da Kaggle IEEE-CIS Fraud Detection e non sono inclusi nel repository.")
+    run_title = "Run" if language == "en" else "Esecuzione"
+    data_title = "Data" if language == "en" else "Dati"
+    return f"# {title}\n\n[English](README.md) | [Italiano](README.it.md)\n\n{introduction}\n\n{headline}\n\n{images}\n\n## {run_title}\n\n{run}\n\n## {data_title}\n\n{note}\n"
 
 
 def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):

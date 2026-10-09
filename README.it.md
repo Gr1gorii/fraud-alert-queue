@@ -1,35 +1,45 @@
-[English](README.md) | [Italiano](README.it.md)
-
 # Coda dei controlli antifrode
 
-Simulo blocchi antifrode e organico dei controlli giornalieri per confrontare il risparmio netto in USD.
+[English](README.md) | [Italiano](README.it.md)
 
-**Con P4 e cinque analisti ottengo USD 8.801,49/giorno; il sesto aggiunge solo USD 134,70/giorno.** Assumo 60 controlli/analista/giorno: cinque analisti hanno un budget fisso di 300 controlli al giorno.
+Una banca non può controllare ogni pagamento con carta: gli analisti ne esaminano una piccola quota ogni giorno. Ho costruito una coda che sceglie quali pagamenti mostrare e misurato il risparmio simulato di ciascun analista.
 
-![Confronto il risparmio netto giornaliero in USD per analisti disponibili](reports/figures/it/stage4_analyst_savings.png)
+## Risultati (45 giorni di test, USD)
 
-![Esamino le regole salvate nella demo locale](reports/screenshots/it/overview.png)
-![Esamino la coda dei controlli e i motivi del Modello C](reports/screenshots/it/alert_queue.png)
+- Con **6 analisti** e **Regola di blocco + modello con storico frodi**, i controlli coprono il **13%** dei pagamenti e fermano il **78%** degli importi fraudolenti, con un risparmio netto di **USD 8.940/giorno**.
+- **Regola di blocco + modello** aggiunge **USD 6.360/giorno di risparmio netto** rispetto a **Solo regola di blocco**, con lo stesso organico di 6 analisti.
+- Il primo analista aggiunge **USD 3.570/giorno**; il 6° e ultimo utile aggiunge soltanto **USD 130/giorno**.
+- La divisione casuale sovrastima il PR-AUC del **65%**: **0,77** contro **0,47** della divisione temporale.
 
-Allo stesso budget di cinque analisti ottengo **USD 8.135,26/giorno con P3 rispetto a USD 1.966,44/giorno con P1 e soli blocchi**, con un incremento di **USD 6.168,82/giorno**.
-Esamino quote e organico dopo aver osservato gli stessi 45 giorni di test. Considero questi risultati in USD una simulazione descrittiva.
+![Risparmio netto per dimensione dell'organico](reports/figures/it/stage4_analyst_savings.png)
 
-![Confronto il risparmio netto giornaliero aggiunto in USD per incremento della quota](reports/figures/it/stage4_marginal_net_savings.png)
-![Confronto il risparmio netto giornaliero in USD fra le quote esaminate](reports/figures/it/stage4_net_savings.png)
-![Confronto i modelli sullo storico per importi fraudolenti in USD intercettati ogni giorno](reports/figures/it/stage3_capacity_curve.png)
-![Confronto il PR-AUC temporale e casuale del modello di base](reports/figures/it/time_random_pr_auc.png)
+## Come funziona
 
-Mantengo il Modello C della fase 3 a **PR-AUC 0,5864**, con il **42,92% degli importi fraudolenti in USD intercettati in media ogni giorno** e **precisione 59,87%** controllando il 3% delle transazioni. Nella fase 2 ottengo **PR-AUC 0,4654 per la divisione temporale e 0,7691 per quella casuale**, con il **32,52% e il 61,37% degli importi fraudolenti in USD intercettati in media ogni giorno** alla stessa quota.
+1. Ho scelto una divisione temporale: gli ultimi 45 giorni servono per il test, separati dall'addestramento da 30 giorni di attesa per i chargeback tardivi. I 15 giorni prima di questo intervallo servono per la validazione e l'arresto anticipato.
+2. L'identificativo del cliente combina carta, indirizzo e inizio dell'account. Lo storico comprende soltanto pagamenti precedenti e tratta insieme quelli con lo stesso timestamp.
+3. Le frodi su pagamenti di almeno 30 giorni prima diventano utilizzabili per il blocco automatico quando arriva l'etichetta. Aggiungendo le frodi note allo storico, il PR-AUC dei clienti già osservati passa da **0,20 a 0,51**; per i nuovi cambia poco (**0,64 contro 0,64**).
+4. I costi ipotizzati comprendono lavoro degli analisti, blocchi errati e attrito per i controlli legittimi; il lavoro è già incluso nel costo del controllo. Le ipotesi precise e gli scenari alternativi sono nella [tabella di sensibilità](reports/stage4_policy.it.md#sensibilità).
 
-## Metodo
+![Importi fraudolenti fermati per regola con l'organico di riferimento](reports/figures/it/stage4_fraud_stopped.png)
+![Sovrastima del PR-AUC con la divisione casuale](reports/figures/it/time_random_pr_auc.png)
 
-Blocco solo in base alle etichette di frode disponibili dopo 30 giorni e ordino la coda restante con i punteggi fissi di LightGBM. Assumo USD 5,00/controllo, USD 15,00/blocco errato e USD 2,00 di attrito per ogni controllo legittimo. Assumo di individuare tutte le frodi controllate e impedirne il valore completo in USD. I blocchi non consumano quota di controllo; il costo dei controlli include il lavoro, quindi non aggiungo stipendi separati.
-Esamino quote dallo 0,5% al 40%, confronto solo i nuovi controlli per il valore marginale e riporto piani separati per P3 e P4 con 1-20 analisti.
-Mantengo test di 45 giorni, attesa di 30 giorni, validazione di 15 giorni, seme 42 e arresto anticipato basato solo sulla validazione. Imparo le categorie solo sull'addestramento e non ottimizzo gli iperparametri. Nella fase 4 calcolo quote degli importi fraudolenti in USD e precisioni sull'intero periodo; nella fase 3 uso medie a pesi giornalieri uguali.
+## Demo
+
+![Riepilogo dei risultati antifrode salvati](reports/screenshots/it/overview.png)
+
+La vista iniziale usa l'organico di riferimento di 6 analisti e i risultati di test salvati.
+
+![Coda dei controlli con motivi raggruppati](reports/screenshots/it/alert_queue.png)
+
+Ogni controllo mostra dati leggibili sul pagamento e sul cliente ricavati dai contributi raggruppati: descrivono il punteggio e non dimostrano che ci sia una frode.
+
+## Limiti
+
+L'organico viene scelto sugli stessi giorni di test usati per misurare il risparmio. Si assume di individuare tutte le frodi controllate e impedirne l'intero importo in USD. I costi sono ipotesi: la [tabella di sensibilità](reports/stage4_policy.it.md#sensibilità) confronta scenari diversi. La maggior parte delle variabili è anonimizzata dal fornitore dei dati.
 
 ## Esecuzione
 
-Uso Python 3.12+ e metto `train_transaction.csv` e `train_identity.csv` in `data/raw/`. Eseguo la fase 4 dopo la fase 3 dai punteggi salvati e non addestro modelli nella fase 4.
+Serve Python 3.12 o successivo. I due CSV di addestramento della competizione vanno in `data/raw/`; punteggi e spiegazioni si preparano offline, senza addestrare modelli nell'app.
 
 ```sh
 cd ~/Projects/fraud-alert-queue
@@ -39,29 +49,20 @@ python -m pip install -r requirements.txt
 python -m src.run_baseline
 python -m src.run_stage3
 python -m src.run_stage4
-python -m unittest discover -s tests -v
-```
-
-Su macOS installo `libomp` con Homebrew se LightGBM lo richiede. Salvo localmente i risultati della [fase 2](reports/baseline_metrics.it.md), della [fase 3](reports/stage3_metrics.it.md) e della [fase 4](reports/stage4_policy.it.md).
-
-## Avvio della demo
-
-Preparo le spiegazioni del Modello C offline. Quando serve ricostruisco l'addestramento a parametri fissi e verifico tutti i punteggi di test salvati prima di memorizzare i contributi. Nell'app leggo decisioni e spiegazioni salvate; non addestro modelli.
-
-```sh
 python -m src.explain
+python -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
-Mostro l'intera coda dei controlli. Salvo i motivi soltanto per l'unione delle code P3/P4 con una quota del 20% di tutte le transazioni giornaliere, escludendo i blocchi automatici dall'ordinamento; fuori da questa copertura non sono disponibili. I contributi descrivono il punteggio del Modello C, non l'esito della frode. P3 ordina secondo il Modello B e mostra i motivi del Modello C.
-
-Installo Chromium una volta e acquisisco soltanto l'app locale in entrambe le lingue a 1440x900:
+Le schermate vengono acquisite in entrambe le lingue, a 1440x900, da un processo locale separato:
 
 ```sh
 python -m playwright install chromium
 python -m src.screenshots
 ```
 
+Le spiegazioni coprono l'unione delle code del modello con una quota del 20% di tutti i pagamenti giornalieri, escludendo i blocchi automatici dall'ordinamento. L'intera coda resta visibile anche quando manca una spiegazione salvata. Su macOS può servire `libomp` di Homebrew per LightGBM.
+
 ## Dati
 
-Uso i dati della [competizione Kaggle IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection/data); non includo i dati nel repository.
+I dati provengono dalla [competizione Kaggle IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection/data) e non sono inclusi nel repository. I valori esatti restano nel [rapporto del modello di base](reports/baseline_metrics.it.md), nel [rapporto sullo storico del cliente](reports/stage3_metrics.it.md) e nel [rapporto sulle regole](reports/stage4_policy.it.md).

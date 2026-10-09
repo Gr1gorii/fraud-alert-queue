@@ -1,5 +1,6 @@
 import argparse
 import gc
+import json
 from pathlib import Path
 
 from .evaluate import evaluate_predictions, evaluate_share_predictions
@@ -10,6 +11,7 @@ from .report_stage3 import write_stage3_reports
 from .run_baseline import report_text, split_summary
 from .split import random_split, time_split
 from .train import predict_scores, train_baseline
+from .display import model_name
 
 MODELS = ("A", "B", "C")
 SEGMENTS = ("new", "returning")
@@ -43,7 +45,7 @@ def run_stage3(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
             columns += list(UID_FEATURES)
         if name == "C":
             columns.append("uid_known_fraud")
-        print(f"I fit model {name}.", flush=True)
+        print(f"I fit {model_name(name)}.", flush=True)
         fit = train_baseline(split["train"].loc[:, columns],
                              split["validation"].loc[:, columns], n_jobs=n_jobs)
         scores = predict_scores(fit, split["test"])
@@ -62,11 +64,18 @@ def run_stage3(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
         result["capacity_curve"].to_csv(reports / f"stage3_{name}_capacity_curve.csv", index=False)
         best_iteration = int(fit["model"].best_iteration_)
         result["best_iteration"] = best_iteration
+        if name == "C":
+            fit["model"].booster_.save_model(str(processed / "model_C.txt"), num_iteration=best_iteration)
+            metadata = {"columns": fit["columns"],
+                        "categories": {col: levels.tolist() for col, levels in fit["categories"].items()},
+                        "best_iteration": best_iteration}
+            (processed / "model_C_categories.json").write_text(
+                json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if name == "A":
             summaries.append(split_summary(split, best_iteration))
             absolute = evaluate_predictions(split["test"], scores)
             feature_count = len(fit["columns"])
-        print(f"I selected iteration {best_iteration} for model {name}.", flush=True)
+        print(f"I selected iteration {best_iteration} for {model_name(name)}.", flush=True)
         del fit, scores
         gc.collect()
     score_df.to_parquet(processed / "stage3_test_scores.parquet", index=False)

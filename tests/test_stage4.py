@@ -77,8 +77,10 @@ class Stage4Tests(unittest.TestCase):
                 self.assertEqual(file_hash(path), digest)
             self.assertFalse((project_root / "data" / "raw").exists())
             self.assertFalse((project_root / "data" / "processed" / "train.parquet").exists())
-            for policy in ("P1", "P2", "P3", "P4"):
-                self.assertIn(policy, result.stdout)
+            names = ("Blocking rule only", "Model queue only", "Blocking rule + model",
+                     "Blocking rule + model with fraud history")
+            for policy, name in zip(("P1", "P2", "P3", "P4"), names):
+                self.assertIn(name, result.stdout)
                 daily = pd.read_csv(project_root / "reports" / f"stage4_{policy}_daily_metrics.csv")
                 self.assertEqual(len(daily), 45)
             summary = pd.read_csv(project_root / "reports" / "stage4_policy_metrics.csv")
@@ -100,7 +102,8 @@ class Stage4Tests(unittest.TestCase):
                 self.assertAlmostEqual(row["net_savings_usd"], row["fraud_amount_stopped_usd"] - row["review_cost_usd"] - row["false_block_cost_usd"] - row["review_friction_cost_usd"])
             staff_tables = [table for table in markdown_tables(result.stdout) if table[0][:2] == ["Policy", "Analysts"]]
             self.assertEqual(len(staff_tables), 2)
-            self.assertEqual({table[2][0] for table in staff_tables}, {"P3", "P4"})
+            self.assertEqual({table[2][0] for table in staff_tables},
+                             {"Blocking rule + model", "Blocking rule + model with fraud history"})
             for table in staff_tables:
                 self.assertEqual(len(table[2:]), 20)
                 self.assertEqual([int(row[1]) for row in table[2:]], list(range(1, 21)))
@@ -118,7 +121,8 @@ class Stage4Tests(unittest.TestCase):
             for language, suffix in (("en", ""), ("it", ".it")):
                 report = (project_root / "reports" / f"stage4_policy{suffix}.md").read_text(encoding="utf-8")
                 readme = (project_root / f"README{suffix}.md").read_text(encoding="utf-8")
-                self.assertTrue(readme.startswith("[English](README.md) | [Italiano](README.it.md)"))
+                self.assertTrue(readme.startswith("# "))
+                self.assertIn("[English](README.md) | [Italiano](README.it.md)", readme)
                 self.assertIn("python -m src.run_stage4", readme)
                 for text in (report, readme):
                     self.assertNotIn("\u2014", text)

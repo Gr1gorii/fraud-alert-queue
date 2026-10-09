@@ -1,35 +1,45 @@
-[English](README.md) | [Italiano](README.it.md)
-
 # Fraud alert queue
 
-I simulate fraud blocks and daily review staffing to compare net savings in USD.
+[English](README.md) | [Italiano](README.it.md)
 
-**With P4 and five analysts, I get USD 8,801.49/day; the sixth adds only USD 134.70/day.** I allow 60 alerts/analyst/day, so five analysts have a fixed 300-alert daily budget.
+A bank cannot review every card payment, so analysts check a small share each day. I built a queue that decides which payments they see and measured the simulated savings from each analyst.
 
-![I compare daily net savings in USD by available analysts](reports/figures/en/stage4_analyst_savings.png)
+## Results (45 test days, USD)
 
-![I inspect saved policies in the local demo](reports/screenshots/en/overview.png)
-![I inspect the review queue and Model C reasons](reports/screenshots/en/alert_queue.png)
+- **6 analysts** with **Blocking rule + model with fraud history** review **13%** of payments, stop **78%** of fraud USD, and save **USD 8,940/day** net.
+- **Blocking rule + model** adds **USD 6,360/day in net savings** over **Blocking rule only** at the same 6-analyst budget.
+- The first analyst adds **USD 3,570/day**; the 6th, last useful analyst adds only **USD 130/day**.
+- Random splitting overstates PR-AUC by **65%**: **0.77** versus **0.47** with time splitting.
 
-At that same five-analyst budget, I get **USD 8,135.26/day with P3 versus USD 1,966.44/day with block-only P1**, an increment of **USD 6,168.82/day**.
-I inspect capacities and staffing after observing the same 45 test days. I treat these USD results as a descriptive simulation.
+![Net savings by analyst team size](reports/figures/en/stage4_analyst_savings.png)
 
-![I compare added daily net savings in USD at each capacity step](reports/figures/en/stage4_marginal_net_savings.png)
-![I compare daily net savings in USD over the tested review-capacity range](reports/figures/en/stage4_net_savings.png)
-![I compare client-history models by daily fraud amount caught (USD share)](reports/figures/en/stage3_capacity_curve.png)
-![I compare the baseline's time and random PR-AUC](reports/figures/en/time_random_pr_auc.png)
+## How it works
 
-I keep Stage 3 Model C at **PR-AUC 0.5864**, **42.92% mean daily fraud amount caught (USD share)**, and **59.87% precision** at a 3% daily review share. For Stage 2, I get **PR-AUC 0.4654 time and 0.7691 random**, with **32.52% and 61.37% mean daily fraud amount caught (USD shares)** at the same share.
+1. I split by time, reserve the last 45 days for test, and leave a 30-day gap for late chargebacks. The 15 days before the gap provide validation for early stopping.
+2. A client ID combines the card, address, and account start. Client histories use only earlier payments, including strict handling of timestamp ties.
+3. Frauds on payments at least 30 days old become available for automatic blocking when their labels arrive. Adding known fraud to client history lifts returning-client PR-AUC from **0.20 to 0.51**; new clients barely change (**0.64 to 0.64**).
+4. Costs assume analyst time, false blocks, and friction for legitimate reviews; labour is already included. Exact unit assumptions and alternatives are in the [cost sensitivity table](reports/stage4_policy.md#sensitivity).
 
-## Method
+![Fraud USD stopped by policy at the reference team budget](reports/figures/en/stage4_fraud_stopped.png)
+![Random splitting overstates PR-AUC](reports/figures/en/time_random_pr_auc.png)
 
-I block only from fraud labels available after 30 days and rank the remaining queue with fixed LightGBM scores. I assume USD 5.00/review, USD 15.00/false block, and USD 2.00/legitimate review in friction. I assume complete detection of reviewed fraud and prevention of its full USD value. Blocks consume no review capacity; review cost includes labour, so I add no separate analyst salary.
-I inspect capacities from 0.5% to 40%, compare only newly added alerts for marginal value, and show separate P3/P4 staffing plans for 1-20 analysts.
-I keep the 45-day test, 30-day gap, 15-day validation, seed 42, and validation-only early stopping. I fit categories on fitting rows only and perform no tuning. Stage 4 pools stopped-fraud USD shares and decision precision; Stage 3 uses equal-day means.
+## Demo
+
+![Overview of the saved fraud review results](reports/screenshots/en/overview.png)
+
+The default view uses the 6-analyst reference team and saved test results.
+
+![Review queue with grouped reasons](reports/screenshots/en/alert_queue.png)
+
+Each alert shows readable payment and client facts from grouped score contributions; these describe the score rather than prove fraud.
+
+## Limitations
+
+Team size is chosen on the same test days used to measure savings. Every reviewed fraud is assumed to be caught, and its full USD value prevented. Costs are assumptions; the [sensitivity table](reports/stage4_policy.md#sensitivity) shows alternative scenarios. Most features are anonymized by the data provider.
 
 ## Run
 
-I use Python 3.12+ and place `train_transaction.csv` and `train_identity.csv` in `data/raw/`. I run Stage 4 after Stage 3 from saved scores and fit no models in Stage 4.
+Python 3.12+ is required. The two competition training CSVs belong in `data/raw/`; saved scores and explanations are prepared offline, and the app fits no models.
 
 ```sh
 cd ~/Projects/fraud-alert-queue
@@ -39,29 +49,20 @@ python -m pip install -r requirements.txt
 python -m src.run_baseline
 python -m src.run_stage3
 python -m src.run_stage4
-python -m unittest discover -s tests -v
-```
-
-On macOS, I install `libomp` with Homebrew if LightGBM needs it. I save [Stage 2](reports/baseline_metrics.md), [Stage 3](reports/stage3_metrics.md), and [Stage 4](reports/stage4_policy.md) results locally.
-
-## Run the demo
-
-I prepare Model C explanations offline. I recover the fixed fit when needed and verify all its saved test scores before saving contributions. I read saved decisions and explanations in the app; I fit no models there.
-
-```sh
 python -m src.explain
+python -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
-I show the full review queue. I save reasons only for the union of P3/P4 queues at a 20% share of all daily transactions, excluding automatic blocks from ranking; other reasons are unavailable. Contributions describe Model C's score, not the fraud outcome. P3 ranks with Model B and displays Model C reasons.
-
-I install Chromium once, then capture only the local app in both languages at 1440x900:
+Screenshots use a separate local app process in both languages at 1440x900:
 
 ```sh
 python -m playwright install chromium
 python -m src.screenshots
 ```
 
+Explanations cover the union of the model review queues at a 20% share of all daily payments, excluding automatic blocks from ranking. The full queue remains visible when a saved explanation is unavailable. On macOS, LightGBM may need Homebrew's `libomp`.
+
 ## Data
 
-I use data from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data); I do not include the data in this repo.
+The data comes from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data) and is not included in the repository. Exact results remain in the [baseline report](reports/baseline_metrics.md), [client-history report](reports/stage3_metrics.md), and [policy report](reports/stage4_policy.md).

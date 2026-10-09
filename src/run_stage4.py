@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .load import PROJECT_ROOT
+from .display import policy_name
 from .policy import CAPACITY_SHARE, POLICIES, best_capacity, evaluate_capacities
 from .policy import analyst_table, evaluate_policy, marginal_value, sensitivity_table
 from .report_stage4 import analyst_metrics_table, write_stage4_reports
@@ -79,14 +80,14 @@ def run_stage4(project_root=PROJECT_ROOT):
     print("\n" + table, flush=True)
     for policy in ("P3", "P4"):
         row = best_capacity(curve, policy)
-        print(f"\nI get the peak {policy} capacity at {row['capacity_share']:.1%}: "
+        print(f"\nI get the peak capacity for {policy_name(policy)} at {row['capacity_share']:.1%}: "
               f"{row['net_savings_per_day_usd']:,.2f} USD/day net savings.", flush=True)
         print(f"I need {row['mean_daily_analysts']:.2f} analysts/day on average and "
               f"a maximum of {int(row['max_daily_analysts'])} at this capacity.", flush=True)
         tail = marginal.loc[marginal.policy == policy].sort_values("capacity_share").iloc[-1]
         if tail['added_alerts_per_day'] > 0:
             trend = "still increases" if tail['marginal_net_savings_per_day_usd'] > 0 else "does not increase"
-            print(f"I find that {policy} net savings {trend} at {tail['capacity_share']:.1%}: "
+            print(f"I find that net savings for {policy_name(policy)} {trend} at {tail['capacity_share']:.1%}: "
                   f"{tail['marginal_net_savings_per_day_usd']:+,.2f} USD/day from the last step.", flush=True)
             fraud_mean = tail['marginal_fraud_mean_amount_usd']
             amount = f"{fraud_mean:,.2f}" if np.isfinite(fraud_mean) else "N/A"
@@ -95,13 +96,13 @@ def run_stage4(project_root=PROJECT_ROOT):
                   f"That gives {tail['marginal_gross_per_alert_usd']:.2f} USD/alert against "
                   f"{tail['marginal_cost_per_alert_usd']:.2f} USD/alert in review and friction costs.", flush=True)
         else:
-            print(f"I get no additional {policy} alerts in the last capacity step.", flush=True)
+            print(f"I get no additional alerts for {policy_name(policy)} in the last capacity step.", flush=True)
     analyst_tables = []
     for policy in ("P3", "P4"):
         staffing = analyst_metrics_table(analysts, policy)
         analyst_tables.append(staffing)
-        print(f"\nI compare fixed analyst budgets for {policy}.\n\n{staffing}", flush=True)
-    print(f"\nI get the highest simulated net savings with {best['policy']} at "
+        print(f"\nI compare fixed analyst budgets for {policy_name(policy)}.\n\n{staffing}", flush=True)
+    print(f"\nI get the highest simulated net savings with {policy_name(best['policy'])} at "
           f"{best['capacity_share']:.1%}: {best['net_savings_per_day_usd']:,.2f} USD/day.", flush=True)
     print(f"I saved the Stage 4 policy reports in {reports}.", flush=True)
     return {"results": results, "curve": curve, "sensitivity": sensitivity,

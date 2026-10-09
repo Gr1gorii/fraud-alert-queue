@@ -8,8 +8,8 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from src.explain import explain_rows, load_model_c, predict_model_c, reason_text
-from src.explain import review_union, top_positive, verify_scores
+from src.explain import explain_rows, feature_group, group_contributions, group_reason
+from src.explain import load_model_c, predict_model_c, review_union, top_groups, top_positive, verify_scores
 from src.features import UID_FEATURES
 from src.train import encode_categories, fit_categories
 
@@ -78,32 +78,79 @@ class ExplanationTests(unittest.TestCase):
         names, _ = top_positive([[1., 1., 1., -2.]], ["first", "second", "third"])
         self.assertEqual(names.tolist(), [["first", "second", "third"]])
 
-    def test_missing_values_and_anonymized_fields_are_truthful(self):
+    def test_group_sums_keep_negative_contributions_and_exclude_bias(self):
+        columns = ["TransactionAmt", "amt_to_uid_mean", "V1", "V2", "id_01", "DeviceInfo", "TransactionDT", "D1"]
+        values = np.array([[8., -10., 4., -3., 5., -2., 2., -1., 100.]])
+        groups, totals, bias = group_contributions(values, columns)
+        sums = dict(zip(groups, totals[0]))
+        self.assertEqual(sums["amount"], -2)
+        self.assertEqual(sums["vesta"], 1)
+        self.assertEqual(sums["device"], 3)
+        self.assertEqual(sums["transaction_timing"], 2)
+        self.assertEqual(sums["d_gaps"], -1)
+        np.testing.assert_allclose(totals.sum(axis=1) + bias, values.sum(axis=1))
+        names, weights, strongest = top_groups(values, columns)
+        self.assertEqual(names.tolist(), [["device", "transaction_timing", "vesta"]])
+        self.assertEqual(weights.tolist(), [[3, 2, 1]])
+        self.assertEqual(strongest.tolist(), [["id_01", "TransactionDT", "V1"]])
+
+    def test_negative_group_sums_do_not_become_positive_reasons(self):
+        names, weights, strongest = top_groups([[2., -3., 0., 100.]], ["TransactionAmt", "amt_to_uid_mean", "V1"])
+        self.assertEqual(names.tolist(), [["", "", ""]])
+        self.assertTrue(np.isnan(weights).all())
+        self.assertEqual(strongest.tolist(), [["", "", ""]])
+
+    def test_features_map_to_the_right_group(self):
+        expected = {"id_38": "device", "TransactionDT": "transaction_timing", "D15": "d_gaps",
+                    "uid_prev_distinct_P_emaildomain": "client_history", "amt_to_uid_mean": "amount",
+                    "card6": "card", "addr1": "address", "dist2": "address", "unfamiliar": "other"}
+        for feature, group in expected.items():
+            self.assertEqual(feature_group(feature), group)
+
+    def test_missing_values_and_opaque_groups_are_truthful(self):
         for language in ("en", "it"):
-            for feature in ("V258", "C1", "D1", "M4", "id_03"):
-                text = reason_text(feature, 3, language=language)
-                self.assertIn(feature, text)
-                self.assertNotIn("seconds", text)
-                missing = reason_text(feature, np.nan, language=language)
-                self.assertIn("Missing" if language == "en" else "mancante", missing)
-            text = reason_text("uid_prev_mean_amt", np.nan, language=language)
-            self.assertIn("USD", text)
-            self.assertIn("unknown" if language == "en" else "dato non disponibile", text)
+            for group in ("amount", "client_history", "known_fraud", "device", "email", "card", "product", "transaction_timing"):
+                text, readable = group_reason(group, {"uid": None}, language=language)
+                self.assertFalse(readable)
+                self.assertIn("unknown" if language == "en" else "sconosciut", text)
+            for group in ("c_counts", "d_gaps", "m_match", "vesta", "address"):
+                text, readable = group_reason(group, {}, "V258", language)
+                self.assertFalse(readable)
+                self.assertNotIn("123", text)
+            self.assertIn("V258", group_reason("vesta", {}, "V258", language)[0])
 
     def test_amount_ratio_below_one_does_not_claim_higher_amount(self):
-        en = reason_text("amt_to_uid_mean", .5)
-        it = reason_text("amt_to_uid_mean", .5, language="it")
+        row = {"TransactionAmt": 303, "amt_to_uid_mean": .5}
+        en, readable = group_reason("amount", row)
+        it, _ = group_reason("amount", row, language="it")
+        self.assertTrue(readable)
+        self.assertIn("300 USD", en)
         self.assertIn("0.5x", en)
         self.assertIn("0,5x", it)
         self.assertNotIn("higher", en)
         self.assertNotIn("maggiore", it)
-        self.assertIn("USD", reason_text("TransactionAmt", 10))
-        self.assertIn("USD", reason_text("uid_prev_mean_amt", 10))
+        self.assertIn("USD", group_reason("client_history", {"uid_prev_mean_amt": 123})[0])
 
     def test_zero_known_fraud_flag_and_missing_uid_are_not_positive_labels(self):
-        self.assertIn("No positive", reason_text("uid_known_fraud", 0, {"uid": "known"}))
-        self.assertIn("unknown", reason_text("uid_known_fraud", 0, {"uid": None}))
-        self.assertIn("30-day", reason_text("uid_known_fraud", 1, {"uid": "known"}))
+        zero = group_reason("known_fraud", {"uid": "known", "uid_known_fraud": 0})[0]
+        self.assertIn("No positive", zero)
+        self.assertNotIn("confirmed", zero)
+        self.assertIn("unknown", group_reason("known_fraud", {"uid": None, "uid_known_fraud": 0})[0])
+        self.assertIn("confirmed earlier", group_reason("known_fraud", {"uid": "known", "uid_known_fraud": 1})[0])
+
+    def test_readable_group_reasons_use_observed_values(self):
+        row = {"uid_prev_count": 4, "seconds_since_uid_prev_tx": 7200,
+               "DeviceInfo": "MotoG3", "card4": "visa", "card6": "debit", "P_emaildomain": "gmail.com"}
+        self.assertEqual(group_reason("device", row), ("Device: MotoG3", True))
+        self.assertEqual(group_reason("card", row), ("Card: visa debit", True))
+        self.assertEqual(group_reason("card", row, language="it"), ("Carta: visa di debito", True))
+        self.assertEqual(group_reason("email", row), ("Email domain: gmail.com", True))
+        self.assertIn("4 earlier payments, last one 2 hours ago", group_reason("client_history", row)[0])
+        self.assertIn("4 pagamenti precedenti, ultimo 2 ore fa", group_reason("client_history", row, language="it")[0])
+        self.assertIn("90 seconds", group_reason("client_history", {"uid_prev_count": 2, "seconds_since_uid_prev_tx": 90})[0])
+        text, readable = group_reason("card", {"card1": 123456})
+        self.assertFalse(readable)
+        self.assertNotIn("123456", text)
 
     def test_score_mismatch_is_rejected(self):
         df = self.df.iloc[:5]
@@ -139,24 +186,16 @@ class ExplanationTests(unittest.TestCase):
             metadata = {"columns": self.fit["columns"], "best_iteration": self.fit["best_iteration"],
                         "categories": {col: levels.tolist() for col, levels in self.fit["categories"].items()}}
             (processed / "model_C_categories.json").write_text(json.dumps(metadata))
-            with patch("src.explain.train_baseline", side_effect=AssertionError("I must reuse the saved fit.")):
+            with patch("lightgbm.LGBMClassifier.fit", side_effect=AssertionError("The saved fit must be reused.")):
                 saved = load_model_c(folder, n_jobs=1)
             np.testing.assert_array_equal(predict_model_c(saved, self.df), scores["score_C"])
 
-    def test_recovery_mismatch_does_not_save_a_booster(self):
+    def test_missing_checkpoint_fails_without_fitting(self):
         with TemporaryDirectory() as folder:
             processed = Path(folder) / "data" / "processed"
             processed.mkdir(parents=True)
-            raw = self.df.drop(columns=[*UID_FEATURES, "uid_known_fraud", "uid"])
-            raw.to_parquet(processed / "train.parquet", index=False)
-            self.df.to_parquet(processed / "train_stage3.parquet", index=False)
-            test = self.df.loc[self.df["day"] >= 75]
-            scores = test[["TransactionID", "day"]].copy()
-            scores["score_C"] = predict_model_c(self.fit, test) + .01
-            scores.to_parquet(processed / "stage3_test_scores.parquet", index=False)
-            trained = {"model": self.model, "categories": self.fit["categories"], "columns": self.fit["columns"]}
-            with patch("src.explain.train_baseline", return_value=trained):
-                with self.assertRaisesRegex(ValueError, "cannot match"):
+            with patch("lightgbm.LGBMClassifier.fit", side_effect=AssertionError("Fitting is not allowed.")):
+                with self.assertRaisesRegex(ValueError, "does not fit"):
                     load_model_c(folder, n_jobs=1)
             self.assertFalse((processed / "model_C.txt").exists())
             self.assertFalse((processed / "model_C_categories.json").exists())

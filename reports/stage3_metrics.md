@@ -2,40 +2,35 @@
 
 # Client history results
 
-I measure `TransactionAmt` in USD.
-
-I compare three fixed models for a daily fraud review queue using 590,540 transactions.
-I get **PR-AUC 0.5864 with Model C (+26.0% relative to A)** and catch **42.92%** of daily fraud amount when I review 3% of transactions.
+590,540 transactions, with amounts in USD. **+ client history + known fraud** reaches **PR-AUC 0.5864 (+26.0% versus raw features)** and catches **42.92%** of mean daily fraud value at a 3% review share.
 
 | Model | PR-AUC | ROC-AUC | Caught @1% | Precision @1% | Caught @2% | Precision @2% | Caught @3% | Precision @3% | Caught @5% | Precision @5% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Model A - Baseline | 0.4654 | 0.8754 | 14.96% | 77.59% | 24.40% | 60.67% | 32.52% | 49.22% | 41.73% | 35.59% |
-| Model B - Client history | 0.4678 | 0.8853 | 15.04% | 75.90% | 25.57% | 60.33% | 34.63% | 48.93% | 44.27% | 35.58% |
-| Model C - Client history + delayed labels | 0.5864 | 0.9293 | 19.03% | 86.23% | 33.53% | 72.77% | 42.92% | 59.87% | 55.78% | 43.12% |
+| Raw features | 0.4654 | 0.8754 | 14.96% | 77.59% | 24.40% | 60.67% | 32.52% | 49.22% | 41.73% | 35.59% |
+| + client history | 0.4678 | 0.8853 | 15.04% | 75.90% | 25.57% | 60.33% | 34.63% | 48.93% | 44.27% | 35.58% |
+| + client history + known fraud | 0.5864 | 0.9293 | 19.03% | 86.23% | 33.53% | 72.77% | 42.92% | 59.87% | 55.78% | 43.12% |
 
-![I compare daily fraud amount caught across review shares](figures/en/stage3_capacity_curve.png)
-![I compare fraud amount caught at a 3% review share](figures/en/stage3_caught_at_3pct.png)
-![I compare new and returning clients at a 3% review share](figures/en/stage3_segments.png)
-![I compare the raw baseline's time and random PR-AUC](figures/en/time_random_pr_auc.png)
+![Fraud amount caught by daily review share](figures/en/stage3_capacity_curve.png)
+![Fraud amount caught at a 3% review share](figures/en/stage3_caught_at_3pct.png)
+![New and returning clients at a 3% review share](figures/en/stage3_segments.png)
+![Time and random PR-AUC with raw features](figures/en/time_random_pr_auc.png)
 
 ## New and returning clients
 
-I call a client new when I have no strictly earlier transaction for its UID. I also treat missing UIDs as new.
-I assign each segment its own daily review budget. I calculate `ceil(share * daily segment rows)`, so these are separate queues rather than a partition of one shared budget.
-I calculate PR-AUC and ROC-AUC across all test rows within each segment.
+A client is new when no transaction for its UID occurred strictly earlier; missing UIDs are also new. Each segment has its own daily budget, `ceil(share * daily segment rows)`. These are separate queues, not a partition of one shared budget. PR-AUC and ROC-AUC use all test rows in each segment.
 
 | Model | Clients | PR-AUC | ROC-AUC | Caught @1% | Precision @1% | Caught @2% | Precision @2% | Caught @3% | Precision @3% | Caught @5% | Precision @5% |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Model A - Baseline | New | 0.6328 | 0.9056 | 15.87% | 90.77% | 26.58% | 82.19% | 34.14% | 74.31% | 47.24% | 59.11% |
-| Model A - Baseline | Returning | 0.2102 | 0.8333 | 14.33% | 35.63% | 22.66% | 27.54% | 29.15% | 23.33% | 37.09% | 17.88% |
-| Model B - Client history | New | 0.6412 | 0.9159 | 16.46% | 89.30% | 26.37% | 81.81% | 35.03% | 75.43% | 47.47% | 59.52% |
-| Model B - Client history | Returning | 0.2037 | 0.8434 | 14.88% | 32.61% | 24.66% | 25.55% | 32.12% | 22.76% | 40.95% | 18.05% |
-| Model C - Client history + delayed labels | New | 0.6431 | 0.9118 | 16.56% | 90.79% | 26.49% | 82.53% | 35.35% | 74.71% | 48.82% | 60.53% |
-| Model C - Client history + delayed labels | Returning | 0.5148 | 0.9367 | 27.52% | 76.84% | 39.54% | 53.02% | 49.86% | 41.44% | 61.97% | 29.64% |
+| Raw features | New | 0.6328 | 0.9056 | 15.87% | 90.77% | 26.58% | 82.19% | 34.14% | 74.31% | 47.24% | 59.11% |
+| Raw features | Returning | 0.2102 | 0.8333 | 14.33% | 35.63% | 22.66% | 27.54% | 29.15% | 23.33% | 37.09% | 17.88% |
+| + client history | New | 0.6412 | 0.9159 | 16.46% | 89.30% | 26.37% | 81.81% | 35.03% | 75.43% | 47.47% | 59.52% |
+| + client history | Returning | 0.2037 | 0.8434 | 14.88% | 32.61% | 24.66% | 25.55% | 32.12% | 22.76% | 40.95% | 18.05% |
+| + client history + known fraud | New | 0.6431 | 0.9118 | 16.56% | 90.79% | 26.49% | 82.53% | 35.35% | 74.71% | 48.82% | 60.53% |
+| + client history + known fraud | Returning | 0.5148 | 0.9367 | 27.52% | 76.84% | 39.54% | 53.02% | 49.86% | 41.44% | 61.97% | 29.64% |
 
 ## Client checks
 
-I calculate these checks over all available raw transactions. I omit missing UIDs from client counts and from the share of UIDs with both labels.
+Checks use all available transactions. Missing UIDs are excluded from client counts and from the share with both fraud and non-fraud labels.
 
 | Client check | Value |
 | --- | ---: |
@@ -47,7 +42,7 @@ I calculate these checks over all available raw transactions. I omit missing UID
 
 ## Test coverage
 
-I keep the baseline's time and random partitions below. I use the same time partitions for Models A, B, and C; I keep the dropped gap out of fitting and early stopping.
+All three feature sets use the same time partitions. The gap is excluded from fitting and early stopping.
 
 | Split | Fit rows (days) | Validation rows (days) | Dropped gap rows (days) | Test rows (days) | Best iteration |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -56,14 +51,14 @@ I keep the baseline's time and random partitions below. I use the same time part
 
 ## Method
 
-- I form `D1n = day - D1` and `uid = card1 + '_' + addr1 + '_' + D1n`. I normalize whole numeric values before joining the strings. If `card1`, `addr1`, or `D1` is missing, I leave the UID missing and never group those rows together.
-- I fit Model A on 432 raw features. I add six client-history features for B: `uid_prev_count`, `uid_prev_mean_amt`, `amt_to_uid_mean`, `seconds_since_uid_prev_tx`, `days_since_uid_first_seen`, `uid_prev_distinct_P_emaildomain`. I add only `uid_known_fraud` to B for Model C. I exclude `uid`, `D1n`, and `is_new_client` from every model, along with `isFraud`, `TransactionID`, and `day`.
-- I use only transactions with strictly smaller `TransactionDT` for counts, mean amount, time intervals, and distinct nonmissing email domains. I group timestamp ties before calculating history. I include earlier unlabeled transactions from the gap and test period because those transactions are available online.
-- I set `uid_known_fraud = 1` only when I have a fraud for the UID with `TransactionDT <= current TransactionDT - 30 * 86400`. I use the exact timestamp cutoff. Historical test labels may enter this feature after the delay; I never fit models or stop training on test rows.
-- I keep all six history features missing for a missing UID. For a known UID with no history, I use count 0, distinct emails 0, and days since first seen 0; previous mean and previous interval stay missing. I keep the amount ratio missing when the previous mean is zero.
-- I reserve the last 45 days for test, drop the preceding 30 days, and use the preceding 15 days for validation. I keep LightGBM defaults, seed 42, at most 1000 iterations, and early stopping after 50 rounds without improvement in validation AP. I fit categorical levels on fitting rows only and perform no tuning.
-- I rank each observed day by score, with ascending `TransactionID` for ties. I review `ceil(share * daily test rows)` transactions at shares of 1%, 2%, 3%, and 5%. I plot shares from 1% to 20%.
-- I average daily fraud-amount ratios equally and exclude days with zero fraud amount. I average precision across observed days and omit days without transactions in the queue. I calculate trapezoidal PR-AUC and ROC-AUC over the full evaluated partition; I use N/A when a metric is undefined.
+- Client identity is `card1 + '_' + addr1 + '_' + (day - D1)`. Whole numeric values are normalized before concatenation. Any missing component leaves the UID missing, so missing clients are never grouped together.
+- Raw features use 432 inputs. Client history adds six inputs: `uid_prev_count`, `uid_prev_mean_amt`, `amt_to_uid_mean`, `seconds_since_uid_prev_tx`, `days_since_uid_first_seen`, `uid_prev_distinct_P_emaildomain`. Known fraud adds `uid_known_fraud` to client history. `uid`, `D1n`, `is_new_client`, `isFraud`, `TransactionID`, and `day` are excluded from model inputs.
+- Aggregates use strictly earlier timestamps. Tied timestamps are grouped before history is calculated. Earlier unlabeled transactions in the gap and test period remain observable.
+- Known fraud uses only labels at least 30 days older than the current timestamp. Historical test labels enter only after this delay; test rows never control fitting or early stopping.
+- Missing UIDs retain missing history. New valid UIDs have zero prior counts, distinct domains, and tenure; previous amount and interval are missing. The amount ratio is missing when the prior mean is zero.
+- I split by time: 45 test days, a 30-day gap, and 15 validation days immediately before the gap. LightGBM defaults, seed 42, at most 1000 iterations, and validation-only early stopping after 50 rounds are unchanged. Categories are learned from fitting rows only.
+- Daily ranking uses score descending and transaction ID ascending for ties. Review shares are 1%, 2%, 3%, and 5%; plotted shares span 1%-20%.
+- Daily amount capture and precision use equal-day means. Days without fraud amount are excluded from amount ratios. Ranking metrics are computed over the full evaluated partition; undefined values are N/A.
 
 ## Absolute capacity on the time split
 
@@ -74,5 +69,5 @@ I keep the baseline's time and random partitions below. I use the same time part
 | 200 | 50.61% | 28.30% |
 | 500 | 69.74% | 14.48% |
 
-I keep the Stage 2 comparison in [baseline results](baseline_metrics.md), write the feature table to `data/processed/train_stage3.parquet`, and save test scores and daily metric CSVs locally.
-I use data from the Kaggle IEEE-CIS Fraud Detection competition; I do not include the data in this repo.
+Saved aggregates include [raw-feature daily results](stage3_A_daily_metrics.csv), [client-history daily results](stage3_B_daily_metrics.csv), and [known-fraud daily results](stage3_C_daily_metrics.csv). The [baseline report](baseline_metrics.md) holds the time versus random comparison.
+Data comes from Kaggle IEEE-CIS Fraud Detection and is not included in the repo.

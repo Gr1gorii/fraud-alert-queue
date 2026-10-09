@@ -12,11 +12,8 @@ from PIL import Image
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 SHARES = (1, 2, 3, 5)
-MODELS = (
-    "Model A - Baseline",
-    "Model B - Client history",
-    "Model C - Client history + delayed labels",
-)
+MODELS = ("Raw features", "+ client history", "+ client history + known fraud")
+MODEL_CODES = dict(zip(MODELS, ("A", "B", "C")))
 UID_FEATURES = (
     "uid_prev_count",
     "uid_prev_mean_amt",
@@ -128,7 +125,7 @@ class Stage3Tests(unittest.TestCase):
                         number = float(value.rstrip("%"))
                         self.assertGreaterEqual(number, 0)
                         self.assertLessEqual(number, 1 if index < 2 else 100)
-                    model = row[0].split(" - ")[0].removeprefix("Model ")
+                    model = MODEL_CODES[row[0]]
                     suffix = "" if first_metric == 1 else f"_{row[1].lower()}"
                     daily = pd.read_csv(project_root / "reports" / f"stage3_{model}{suffix}_daily_metrics.csv")
                     for share in SHARES:
@@ -158,7 +155,8 @@ class Stage3Tests(unittest.TestCase):
             for language, suffix in (("en", ""), ("it", ".it")):
                 report = (project_root / "reports" / f"stage3_metrics{suffix}.md").read_text(encoding="utf-8")
                 readme = (project_root / f"README{suffix}.md").read_text(encoding="utf-8")
-                self.assertTrue(readme.startswith("[English](README.md) | [Italiano](README.it.md)"))
+                self.assertTrue(readme.startswith("# "))
+                self.assertIn("[English](README.md) | [Italiano](README.it.md)", readme)
                 self.assertIn("python -m src.run_stage3", readme)
                 for text in (report, readme):
                     self.assertNotIn("\u2014", text)

@@ -5,10 +5,71 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from src.screenshots import capture_screenshots, start_server, stop_server, unused_port, wait_for_server
+import pandas as pd
+
+from src.display import reference_team
+from src.screenshots import capture_screenshots, save_view, select_detail, start_server, stop_server, unused_port, wait_for_server
 
 
 class ScreenshotTests(unittest.TestCase):
+    def test_reference_team_and_detail_come_from_saved_results(self):
+        staff = pd.DataFrame({"policy": ["P3", "P4", "P4", "P4"],
+                              "analysts": [9, 1, 2, 3],
+                              "net_savings_per_day_usd": [900, 200, 400, 300]})
+        analysts = reference_team(staff)
+        self.assertEqual(analysts, 2)
+        df = pd.DataFrame({"TransactionID": [811, 927, 355, 490], "day": [9, 9, 11, 11],
+                           "score_C": [.99, .9, .8, .7], "uid_known_fraud": [1, 0, 0, 0]})
+        reasons = pd.DataFrame({"TransactionID": [811, 927, 355, 490],
+                               "readable_1": [True, True, True, True],
+                               "readable_2": [True, False, True, True],
+                               "readable_3": [True, False, True, False]})
+        self.assertEqual(select_detail(df, reasons, analysts), (11, 355))
+        df["isFraud"] = [0, 1, 0, 1]
+        self.assertEqual(select_detail(df, reasons, analysts), (11, 355))
+        df["isFraud"] = 1 - df["isFraud"]
+        self.assertEqual(select_detail(df, reasons, analysts), (11, 355))
+
+    def test_detail_respects_daily_budget_and_free_blocks(self):
+        df = pd.DataFrame({"TransactionID": range(100, 162), "day": 20,
+                           "score_C": [1 - i / 100 for i in range(62)],
+                           "uid_known_fraud": [1] + [0] * 61})
+        reasons = pd.DataFrame({"TransactionID": [160, 161], "readable_1": True,
+                               "readable_2": True, "readable_3": False})
+        self.assertEqual(select_detail(df, reasons, 1), (20, 160))
+        with self.assertRaisesRegex(ValueError, "eligible saved alert"):
+            select_detail(df, reasons.loc[reasons["TransactionID"].eq(161)], 1)
+
+    def test_detail_requires_two_true_flags(self):
+        df = pd.DataFrame({"TransactionID": [123], "day": [30], "score_C": [.9], "uid_known_fraud": [0]})
+        reasons = pd.DataFrame({"TransactionID": [123], "readable_1": [True],
+                               "readable_2": [False], "readable_3": [False]})
+        with self.assertRaisesRegex(ValueError, "at least two readable"):
+            select_detail(df, reasons, 1)
+        reasons["readable_2"] = "True"
+        with self.assertRaisesRegex(ValueError, "saved booleans"):
+            select_detail(df, reasons, 1)
+
+    def test_equal_scores_use_exact_transaction_ids(self):
+        first = 2**53 + 1
+        df = pd.DataFrame({"TransactionID": [first + 1, first], "day": [1, 1],
+                           "score_C": [.8, .8], "uid_known_fraud": [0, 0]})
+        reasons = pd.DataFrame({"TransactionID": [first, first + 1], "readable_1": True,
+                               "readable_2": True, "readable_3": False})
+        self.assertEqual(select_detail(df, reasons, 1), (1, first))
+
+    def test_capture_blurs_focus_then_moves_pointer_before_screenshot(self):
+        page = MagicMock()
+        events = []
+        page.evaluate.side_effect = lambda script: events.append(("blur", script))
+        page.mouse.move.side_effect = lambda x, y: events.append(("move", (x, y)))
+        page.screenshot.side_effect = lambda **kwargs: events.append(("capture", kwargs))
+        save_view(page, Path("/tmp/overview.png"))
+        self.assertEqual([event[0] for event in events], ["blur", "move", "capture"])
+        self.assertIn("document.activeElement?.blur()", events[0][1])
+        self.assertEqual(events[1][1], (0, 0))
+        self.assertFalse(events[2][1]["full_page"])
+
     def test_port_is_loopback_and_released(self):
         port = unused_port()
         self.assertGreater(port, 0)

@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.demo import DATA_COLUMNS, EXPLANATION_COLUMNS, load_demo_data, prepare_demo, queue_display, review_queue, staff_figure, staff_metrics
 from src.policy import evaluate_policy
+from src.display import policy_name, reference_team
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,8 +34,8 @@ def explanations(ids):
         for i in range(1, 4):
             row.update({
                 f"feature_{i}": f"feature_{i}", f"contribution_{i}": 1 / i,
-                f"reason_{i}_en": f"I inspect saved reason {i}.",
-                f"reason_{i}_it": f"Esamino il motivo salvato {i}.",
+                f"reason_{i}_en": f"Saved reason {i}.",
+                f"reason_{i}_it": f"Motivo salvato {i}.",
             })
         rows.append(row)
     return pd.DataFrame(rows, columns=EXPLANATION_COLUMNS)
@@ -85,9 +86,9 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(len(out), len(queue))
         self.assertGreater(len(out), 120)
         self.assertEqual(out["explanation_available"].sum(), 2)
-        self.assertIn("Unavailable", out.iloc[-1]["reason_1"])
+        self.assertEqual(out.iloc[-1]["why_flagged"], "Explanation unavailable")
         italian = queue_display(queue, saved, "it")
-        self.assertIn("Non disponibile", italian.iloc[-1]["reason_1"])
+        self.assertEqual(italian.iloc[-1]["why_flagged"], "Motivo non disponibile")
 
     def test_blank_slots_are_valid_and_distinct_from_missing_coverage(self):
         queue = review_queue(self.prepared, "P4", 1, 138)
@@ -107,6 +108,7 @@ class DemoTests(unittest.TestCase):
         shown = queue_display(queue, loaded)
         self.assertTrue(shown.iloc[0]["explanation_available"])
         self.assertEqual(shown.iloc[0]["reason_1"], "")
+        self.assertEqual(shown.iloc[0]["why_flagged"], "No positive risk factors")
         self.assertFalse(shown.iloc[-1]["explanation_available"])
 
     def test_unknown_duplicate_and_nonpositive_explanation_ids_are_rejected(self):
@@ -129,18 +131,27 @@ class DemoTests(unittest.TestCase):
         fig = staff_figure(metrics, "P3", 5, "it")
         self.assertEqual(tuple(fig.get_size_inches()), (9, 5))
         self.assertEqual(fig.dpi, 150)
-        self.assertIn("P3", fig.axes[0].get_title())
+        self.assertIn(policy_name("P3", "it"), fig.axes[0].get_title())
         self.assertIn("USD", fig.axes[0].get_ylabel())
+        plt.close(fig)
+        reference = reference_team(metrics)
+        changed = staff_metrics(self.prepared, review_cost_usd=0, false_block_cost_usd=0, review_friction_usd=0)
+        fig = staff_figure(changed, "P4", 20, reference=reference)
+        marker = next(line for line in fig.axes[0].lines if line.get_label().startswith("Reference team:"))
+        self.assertEqual(marker.get_xdata().tolist(), [reference])
+        self.assertEqual(fig.axes[0].lines[0].get_label(), policy_name("P3"))
+        self.assertEqual(fig.axes[0].lines[1].get_label(), policy_name("P4"))
         plt.close(fig)
 
     def test_optional_saved_stage4_reference_matches_every_staff_plan(self):
         decisions = PROJECT_ROOT / "data/processed/stage4_decisions.parquet"
         reference = PROJECT_ROOT / "reports/stage4_analyst_metrics.csv"
         if not decisions.is_file() or not reference.is_file():
-            self.skipTest("I compare the private saved reference when it is available.")
+            self.skipTest("The private saved reference is checked when available.")
         df = pd.read_parquet(decisions, columns=list(DATA_COLUMNS))
         actual = staff_metrics(prepare_demo(df)).set_index(["policy", "analysts"])
         expected = pd.read_csv(reference).set_index(["policy", "analysts"])
+        self.assertEqual(reference_team(actual.reset_index()), reference_team(expected.reset_index()))
         for index, row in actual.iterrows():
             for key in actual.columns:
                 if key not in expected.columns:

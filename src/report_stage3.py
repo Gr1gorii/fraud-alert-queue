@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .display import MODEL_NAMES, model_name
 from .evaluate import K_SHARE
 from .features import LABEL_DELAY_DAYS, UID_FEATURES
 from .run_baseline import absolute_table, coverage_table, format_number
@@ -11,18 +12,6 @@ from .train import EARLY_STOPPING_ROUNDS, MAX_ESTIMATORS, RANDOM_SEED
 MODELS = ("A", "B", "C")
 SEGMENTS = ("new", "returning")
 LANGUAGES = ("en", "it")
-MODEL_NAMES = {
-    "en": {
-        "A": "Model A - Baseline",
-        "B": "Model B - Client history",
-        "C": "Model C - Client history + delayed labels",
-    },
-    "it": {
-        "A": "Modello A - Base",
-        "B": "Modello B - Storico del cliente",
-        "C": "Modello C - Storico del cliente + etichette ritardate",
-    },
-}
 SEGMENT_NAMES = {
     "en": {"new": "New", "returning": "Returning"},
     "it": {"new": "Nuovi", "returning": "Già osservati"},
@@ -32,18 +21,10 @@ FIGURES = (
     "stage3_segments.png", "time_random_pr_auc.png",
 )
 FIGURE_LABELS = {
-    "en": (
-        "I compare daily fraud amount caught across review shares",
-        "I compare fraud amount caught at a 3% review share",
-        "I compare new and returning clients at a 3% review share",
-        "I compare the raw baseline's time and random PR-AUC",
-    ),
-    "it": (
-        "Confronto gli importi intercettati per quota di controlli giornalieri",
-        "Confronto gli importi intercettati controllando il 3% delle transazioni",
-        "Confronto clienti nuovi e già osservati con una quota di controlli del 3%",
-        "Confronto il PR-AUC temporale e casuale del modello di base",
-    ),
+    "en": ("Fraud amount caught by daily review share", "Fraud amount caught at a 3% review share",
+           "New and returning clients at a 3% review share", "Time and random PR-AUC with raw features"),
+    "it": ("Importi intercettati per quota di controlli giornalieri", "Importi intercettati controllando il 3% delle transazioni",
+           "Clienti nuovi e già osservati al 3% di controlli", "PR-AUC temporale e casuale con variabili grezze"),
 }
 
 
@@ -54,109 +35,80 @@ def _headers(language, segment=False):
     labels.extend(["PR-AUC", "ROC-AUC"])
     for share in K_SHARE:
         pct = f"{share:.0%}"
-        labels.extend([
-            f"Caught @{pct}" if language == "en" else f"Intercettato @{pct}",
-            f"Precision @{pct}" if language == "en" else f"Precisione @{pct}",
-        ])
+        labels.extend([f"Caught @{pct}" if language == "en" else f"Intercettato @{pct}",
+                       f"Precision @{pct}" if language == "en" else f"Precisione @{pct}"])
     return labels
 
 
 def _metric_cells(result, language):
-    metrics = result["metrics"]
-    cells = [format_number(metrics[key], language) for key in ("pr_auc", "roc_auc")]
+    m = result["metrics"]
+    cells = [format_number(m[key], language) for key in ("pr_auc", "roc_auc")]
     for share in K_SHARE:
         pct = f"{share:.0%}"
-        cells.extend([
-            format_number(metrics[f"fraud_amount_caught@{pct}"], language, True),
-            format_number(metrics[f"precision@{pct}"], language, True),
-        ])
+        cells += [format_number(m[f"fraud_amount_caught@{pct}"], language, True),
+                  format_number(m[f"precision@{pct}"], language, True)]
     return cells
 
 
 def ablation_table(ablation, language="en"):
     labels = _headers(language)
-    rows = ["| " + " | ".join(labels) + " |",
-            "| --- | " + " | ".join(["---:"] * (len(labels) - 1)) + " |"]
+    rows = ["| " + " | ".join(labels) + " |", "| --- | " + " | ".join(["---:"] * (len(labels) - 1)) + " |"]
     for name in MODELS:
-        cells = [MODEL_NAMES[language][name], *_metric_cells(ablation[name], language)]
-        rows.append("| " + " | ".join(cells) + " |")
+        rows.append("| " + " | ".join([model_name(name, language), *_metric_cells(ablation[name], language)]) + " |")
     return "\n".join(rows)
 
 
 def segment_table(segments, language="en"):
     labels = _headers(language, segment=True)
-    rows = ["| " + " | ".join(labels) + " |",
-            "| --- | --- | " + " | ".join(["---:"] * (len(labels) - 2)) + " |"]
+    rows = ["| " + " | ".join(labels) + " |", "| --- | --- | " + " | ".join(["---:"] * (len(labels) - 2)) + " |"]
     for name in MODELS:
         for segment in SEGMENTS:
-            cells = [MODEL_NAMES[language][name], SEGMENT_NAMES[language][segment]]
-            cells.extend(_metric_cells(segments[name][segment], language))
+            cells = [model_name(name, language), SEGMENT_NAMES[language][segment], *_metric_cells(segments[name][segment], language)]
             rows.append("| " + " | ".join(cells) + " |")
     return "\n".join(rows)
 
 
 def _sanity_table(sanity, language):
-    if language == "en":
-        labels = ["UIDs", "Mean transactions per UID", "Median transactions per UID",
-                  "UIDs with both labels", "Transactions with missing UID"]
-        header = "| Client check | Value |"
-    else:
-        labels = ["UID distinti", "Media delle transazioni per UID", "Mediana delle transazioni per UID",
-                  "UID con entrambe le etichette", "Transazioni senza UID"]
-        header = "| Controllo sui clienti | Valore |"
-    count = f"{sanity['n_uids']:,}"
-    if language == "it":
-        count = count.replace(",", ".")
-    values = [count,
-              format_number(sanity["mean_transactions_per_uid"], language),
+    labels = {
+        "en": ["UIDs", "Mean transactions per UID", "Median transactions per UID", "UIDs with both labels", "Transactions with missing UID"],
+        "it": ["UID distinti", "Media delle transazioni per UID", "Mediana delle transazioni per UID", "UID con entrambe le etichette", "Transazioni senza UID"],
+    }
+    header = "| Client check | Value |" if language == "en" else "| Controllo sui clienti | Valore |"
+    count = f"{sanity['n_uids']:,}".replace(",", ".") if language == "it" else f"{sanity['n_uids']:,}"
+    values = [count, format_number(sanity["mean_transactions_per_uid"], language),
               format_number(sanity["median_transactions_per_uid"], language),
               format_number(sanity["mixed_label_uid_share"], language, True),
               format_number(sanity["missing_uid_share"], language, True)]
-    rows = [header, "| --- | ---: |"]
-    rows.extend(f"| {label} | {value} |" for label, value in zip(labels, values))
-    return "\n".join(rows)
+    return "\n".join([header, "| --- | ---: |", *[f"| {label} | {value} |" for label, value in zip(labels[language], values)]])
 
 
-def _gain(ablation, language):
-    a = ablation["A"]["metrics"]["pr_auc"]
-    c = ablation["C"]["metrics"]["pr_auc"]
-    if not np.isfinite(a) or not np.isfinite(c) or a <= 0:
-        return "N/A" if language == "en" else "N/D"
-    text = f"{100 * (c / a - 1):+.1f}%"
-    return text if language == "en" else text.replace(".", ",")
-
-
-def _figures(language, readme=False):
-    folder = "reports/figures" if readme else "figures"
-    return "\n".join(
-        f"![{label}]({folder}/{language}/{name})"
-        for name, label in zip(FIGURES, FIGURE_LABELS[language])
-    )
+def _figures(language):
+    return "\n".join(f"![{label}](figures/{language}/{name})" for name, label in zip(FIGURES, FIGURE_LABELS[language]))
 
 
 def _report(ablation, segments, sanity, summaries, feature_count, absolute, language):
     table = ablation_table(ablation, language)
     segment_metrics = segment_table(segments, language)
-    client_checks = _sanity_table(sanity, language)
+    checks = _sanity_table(sanity, language)
     coverage = coverage_table(summaries, language)
     figures = _figures(language)
-    features = ", ".join(f"`{col}`" for col in UID_FEATURES)
     c = ablation["C"]["metrics"]
     pr = format_number(c["pr_auc"], language)
     caught = format_number(c["fraud_amount_caught@3%"], language, True)
-    gain = _gain(ablation, language)
-    absolute_metrics = absolute_table(absolute, language) if absolute is not None else ""
+    raw_pr = ablation["A"]["metrics"]["pr_auc"]
+    gain = 100 * (c["pr_auc"] / raw_pr - 1) if np.isfinite(raw_pr) and raw_pr > 0 else np.nan
+    gain_text = f"{gain:+.1f}%" if language == "en" else f"{gain:+.1f}%".replace(".", ",")
+    absolute_text = absolute_table(absolute, language) if absolute is not None else ""
+    features = ", ".join(f"`{col}`" for col in UID_FEATURES)
+    links = "[English](stage3_metrics.md) | [Italiano](stage3_metrics.it.md)"
     rows = sum(count for count, _ in next(s for s in summaries if s["name"] == "time")["partitions"].values())
     count = f"{rows:,}" if language == "en" else f"{rows:,}".replace(",", ".")
-    links = "[English](stage3_metrics.md) | [Italiano](stage3_metrics.it.md)"
     if language == "en":
         return f"""{links}
 
 # Client history results
 
-I compare three fixed models for a daily fraud review queue using {count} transactions.
-I measure `TransactionAmt` in USD.
-I get **PR-AUC {pr} with Model C ({gain} relative to A)** and catch **{caught}** of daily fraud amount when I review 3% of transactions.
+{count} transactions, with amounts in USD. **{model_name('C')}** reaches **PR-AUC {pr} ({gain_text} versus raw features)** and catches **{caught}** of mean daily fraud value at a 3% review share.
 
 {table}
 
@@ -164,47 +116,43 @@ I get **PR-AUC {pr} with Model C ({gain} relative to A)** and catch **{caught}**
 
 ## New and returning clients
 
-I call a client new when I have no strictly earlier transaction for its UID. I also treat missing UIDs as new.
-I assign each segment its own daily review budget. I calculate `ceil(share * daily segment rows)`, so these are separate queues rather than a partition of one shared budget.
-I calculate PR-AUC and ROC-AUC across all test rows within each segment.
+A client is new when no transaction for its UID occurred strictly earlier; missing UIDs are also new. Each segment has its own daily budget, `ceil(share * daily segment rows)`. These are separate queues, not a partition of one shared budget. PR-AUC and ROC-AUC use all test rows in each segment.
 
 {segment_metrics}
 
 ## Client checks
 
-I calculate these checks over all available raw transactions. I omit missing UIDs from client counts and from the share of UIDs with both labels.
+Checks use all available transactions. Missing UIDs are excluded from client counts and from the share with both fraud and non-fraud labels.
 
-{client_checks}
+{checks}
 
 ## Test coverage
 
-I keep the baseline's time and random partitions below. I use the same time partitions for Models A, B, and C; I keep the dropped gap out of fitting and early stopping.
+All three feature sets use the same time partitions. The gap is excluded from fitting and early stopping.
 
 {coverage}
 
 ## Method
 
-- I form `D1n = day - D1` and `uid = card1 + '_' + addr1 + '_' + D1n`. I normalize whole numeric values before joining the strings. If `card1`, `addr1`, or `D1` is missing, I leave the UID missing and never group those rows together.
-- I fit Model A on {feature_count} raw features. I add six client-history features for B: {features}. I add only `uid_known_fraud` to B for Model C. I exclude `uid`, `D1n`, and `is_new_client` from every model, along with `isFraud`, `TransactionID`, and `day`.
-- I use only transactions with strictly smaller `TransactionDT` for counts, mean amount, time intervals, and distinct nonmissing email domains. I group timestamp ties before calculating history. I include earlier unlabeled transactions from the gap and test period because those transactions are available online.
-- I set `uid_known_fraud = 1` only when I have a fraud for the UID with `TransactionDT <= current TransactionDT - {LABEL_DELAY_DAYS} * 86400`. I use the exact timestamp cutoff. Historical test labels may enter this feature after the delay; I never fit models or stop training on test rows.
-- I keep all six history features missing for a missing UID. For a known UID with no history, I use count 0, distinct emails 0, and days since first seen 0; previous mean and previous interval stay missing. I keep the amount ratio missing when the previous mean is zero.
-- I reserve the last {TEST_DAYS} days for test, drop the preceding {GAP_DAYS} days, and use the preceding {VALIDATION_DAYS} days for validation. I keep LightGBM defaults, seed {RANDOM_SEED}, at most {MAX_ESTIMATORS} iterations, and early stopping after {EARLY_STOPPING_ROUNDS} rounds without improvement in validation AP. I fit categorical levels on fitting rows only and perform no tuning.
-- I rank each observed day by score, with ascending `TransactionID` for ties. I review `ceil(share * daily test rows)` transactions at shares of 1%, 2%, 3%, and 5%. I plot shares from 1% to 20%.
-- I average daily fraud-amount ratios equally and exclude days with zero fraud amount. I average precision across observed days and omit days without transactions in the queue. I calculate trapezoidal PR-AUC and ROC-AUC over the full evaluated partition; I use N/A when a metric is undefined.
+- Client identity is `card1 + '_' + addr1 + '_' + (day - D1)`. Whole numeric values are normalized before concatenation. Any missing component leaves the UID missing, so missing clients are never grouped together.
+- Raw features use {feature_count} inputs. Client history adds six inputs: {features}. Known fraud adds `uid_known_fraud` to client history. `uid`, `D1n`, `is_new_client`, `isFraud`, `TransactionID`, and `day` are excluded from model inputs.
+- Aggregates use strictly earlier timestamps. Tied timestamps are grouped before history is calculated. Earlier unlabeled transactions in the gap and test period remain observable.
+- Known fraud uses only labels at least {LABEL_DELAY_DAYS} days older than the current timestamp. Historical test labels enter only after this delay; test rows never control fitting or early stopping.
+- Missing UIDs retain missing history. New valid UIDs have zero prior counts, distinct domains, and tenure; previous amount and interval are missing. The amount ratio is missing when the prior mean is zero.
+- I split by time: {TEST_DAYS} test days, a {GAP_DAYS}-day gap, and {VALIDATION_DAYS} validation days immediately before the gap. LightGBM defaults, seed {RANDOM_SEED}, at most {MAX_ESTIMATORS} iterations, and validation-only early stopping after {EARLY_STOPPING_ROUNDS} rounds are unchanged. Categories are learned from fitting rows only.
+- Daily ranking uses score descending and transaction ID ascending for ties. Review shares are 1%, 2%, 3%, and 5%; plotted shares span 1%-20%.
+- Daily amount capture and precision use equal-day means. Days without fraud amount are excluded from amount ratios. Ranking metrics are computed over the full evaluated partition; undefined values are N/A.
 
-{absolute_metrics}
+{absolute_text}
 
-I keep the Stage 2 comparison in [baseline results](baseline_metrics.md), write the feature table to `data/processed/train_stage3.parquet`, and save test scores and daily metric CSVs locally.
-I use data from the Kaggle IEEE-CIS Fraud Detection competition; I do not include the data in this repo.
+Saved aggregates include [raw-feature daily results](stage3_A_daily_metrics.csv), [client-history daily results](stage3_B_daily_metrics.csv), and [known-fraud daily results](stage3_C_daily_metrics.csv). The [baseline report](baseline_metrics.md) holds the time versus random comparison.
+Data comes from Kaggle IEEE-CIS Fraud Detection and is not included in the repo.
 """
     return f"""{links}
 
-# Risultati dello storico del cliente
+# Risultati dello storico cliente
 
-Confronto tre modelli a parametri fissi per una coda giornaliera di controlli antifrode su {count} transazioni.
-Uso importi in USD per `TransactionAmt`.
-Ottengo **PR-AUC {pr} con il Modello C ({gain} rispetto ad A)** e intercetto il **{caught}** degli importi fraudolenti giornalieri controllando il 3% delle transazioni.
+{count} transazioni, con importi in USD. **{model_name('C', language)}** raggiunge **PR-AUC {pr} ({gain_text} rispetto alle variabili grezze)** e intercetta il **{caught}** degli importi fraudolenti in media al giorno, controllando il 3% dei pagamenti.
 
 {table}
 
@@ -212,142 +160,60 @@ Ottengo **PR-AUC {pr} con il Modello C ({gain} rispetto ad A)** e intercetto il 
 
 ## Clienti nuovi e già osservati
 
-Considero nuovo un cliente quando non ho transazioni strettamente precedenti per il suo UID. Tratto come nuovi anche i clienti senza UID.
-Assegno a ciascun segmento un budget giornaliero indipendente. Calcolo `ceil(quota * righe giornaliere del segmento)`: confronto code separate, senza ripartire un unico budget.
-Calcolo PR-AUC e ROC-AUC su tutte le transazioni di test di ciascun segmento.
+Un cliente è nuovo quando nessuna transazione del suo UID ha un timestamp strettamente precedente; anche un UID mancante è considerato nuovo. Ogni segmento ha un budget giornaliero proprio, `ceil(quota * righe giornaliere del segmento)`. Si tratta di code indipendenti, senza dividere un budget comune. PR-AUC e ROC-AUC usano tutte le transazioni di test del segmento.
 
 {segment_metrics}
 
 ## Controlli sui clienti
 
-Calcolo questi controlli su tutte le transazioni originali disponibili. Escludo gli UID mancanti dai conteggi dei clienti e dalla quota di UID con entrambe le etichette.
+I controlli usano tutte le transazioni disponibili. Gli UID mancanti sono esclusi dai conteggi dei clienti e dalla quota con entrambe le etichette, frode e pagamento legittimo.
 
-{client_checks}
+{checks}
 
 ## Dati di test
 
-Riporto le partizioni temporali e casuali del modello di base. Uso le stesse partizioni temporali per i Modelli A, B e C; escludo l'intervallo di attesa dall'addestramento e dall'arresto anticipato.
+Le tre combinazioni di variabili usano le stesse partizioni temporali. L'intervallo di attesa è escluso dall'addestramento e dall'arresto anticipato.
 
 {coverage}
 
 ## Metodo
 
-- Calcolo `D1n = day - D1` e `uid = card1 + '_' + addr1 + '_' + D1n`. Uniformo i valori numerici interi prima di unire le stringhe. Se manca `card1`, `addr1` o `D1`, lascio l'UID mancante e non raggruppo quelle transazioni fra loro.
-- Addestro il Modello A su {feature_count} variabili originali. Per B aggiungo sei variabili sullo storico del cliente: {features}. Per il Modello C aggiungo a B soltanto `uid_known_fraud`. Escludo `uid`, `D1n` e `is_new_client` da ogni modello, insieme a `isFraud`, `TransactionID` e `day`.
-- Uso soltanto transazioni con `TransactionDT` strettamente inferiore per conteggi, importo medio, intervalli e domini email distinti non mancanti. Raggruppo le transazioni con lo stesso timestamp prima di calcolare lo storico. Includo le transazioni precedenti non ancora etichettate dell'intervallo di attesa e del test, perché sono disponibili durante l'uso del modello.
-- Imposto `uid_known_fraud = 1` solo se osservo una frode per l'UID con `TransactionDT <= TransactionDT corrente - {LABEL_DELAY_DAYS} * 86400`. Applico il limite al timestamp esatto. Le etichette storiche del test possono entrare nella variabile dopo l'attesa; non uso mai righe di test per addestrare i modelli o decidere quando fermarli.
-- Lascio mancanti tutte e sei le variabili di storico per un UID mancante. Per un UID valido senza storico uso 0 per conteggio, domini distinti e giorni dalla prima osservazione; lascio mancanti media e intervallo precedenti. Lascio mancante il rapporto fra importi quando la media precedente è zero.
-- Riservo gli ultimi {TEST_DAYS} giorni al test, escludo i {GAP_DAYS} giorni precedenti e uso i {VALIDATION_DAYS} giorni ancora precedenti per la validazione. Mantengo i parametri predefiniti di LightGBM, seme {RANDOM_SEED}, un massimo di {MAX_ESTIMATORS} iterazioni e l'arresto dopo {EARLY_STOPPING_ROUNDS} iterazioni senza miglioramenti nell'AP di validazione. Imparo le categorie solo dall'addestramento e non ottimizzo gli iperparametri.
-- Ordino ogni giorno osservato per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `ceil(quota * righe giornaliere di test)` transazioni per quote dell'1%, 2%, 3% e 5%. Nei grafici confronto quote dall'1% al 20%.
-- Calcolo la media dei rapporti giornalieri degli importi con pesi uguali ed escludo i giorni senza importi fraudolenti. Per la precisione calcolo la media sui giorni osservati ed escludo quelli senza transazioni nella coda. Calcolo PR-AUC con il metodo dei trapezi e ROC-AUC su tutto l'insieme valutato; uso N/D per le metriche non definite.
+- L'identificativo è `card1 + '_' + addr1 + '_' + (day - D1)`. I valori numerici interi sono uniformati prima di unire le stringhe. Se manca un componente, l'UID resta mancante e queste transazioni non vengono raggruppate fra loro.
+- Le variabili grezze comprendono {feature_count} input. Lo storico cliente aggiunge sei input: {features}. Le frodi note aggiungono `uid_known_fraud` allo storico. `uid`, `D1n`, `is_new_client`, `isFraud`, `TransactionID` e `day` sono esclusi dal modello.
+- Gli aggregati usano soltanto timestamp strettamente precedenti. Le transazioni con lo stesso timestamp sono raggruppate prima del calcolo. Le transazioni precedenti non ancora etichettate dell'attesa e del test restano osservabili.
+- Le frodi note usano soltanto etichette precedenti di almeno {LABEL_DELAY_DAYS} giorni al timestamp corrente. Le etichette storiche del test entrano solo dopo l'attesa; il test non determina addestramento o arresto anticipato.
+- Un UID mancante conserva uno storico mancante. Un UID valido nuovo ha zero transazioni, domini distinti e anzianità; importo e intervallo precedenti restano mancanti. Il rapporto fra importi è mancante quando la media precedente è zero.
+- Scelgo una divisione temporale: {TEST_DAYS} giorni di test, {GAP_DAYS} di attesa e {VALIDATION_DAYS} di validazione immediatamente prima dell'attesa. Restano invariati parametri predefiniti di LightGBM, seme {RANDOM_SEED}, massimo {MAX_ESTIMATORS} iterazioni e arresto basato solo sulla validazione dopo {EARLY_STOPPING_ROUNDS} iterazioni senza miglioramenti. Le categorie sono apprese soltanto dalle righe di addestramento.
+- L'ordine giornaliero usa punteggi decrescenti e ID crescenti a parità di punteggio. Le quote sono 1%, 2%, 3% e 5%; i grafici mostrano 1%-20%.
+- Importi e precisioni giornalieri hanno pesi uguali nella media. I giorni senza importi fraudolenti sono esclusi dai relativi rapporti. Le metriche di ordinamento usano l'intera partizione; un valore non definito è N/D.
 
-{absolute_metrics}
+{absolute_text}
 
-Mantengo il confronto della fase 2 nei [risultati del modello di base](baseline_metrics.it.md), salvo la tabella delle variabili in `data/processed/train_stage3.parquet` e conservo localmente punteggi di test e CSV delle metriche giornaliere.
-Uso i dati della competizione Kaggle IEEE-CIS Fraud Detection; non includo i dati nel repository.
-"""
-
-
-def _readme(baseline_results, ablation, language):
-    time = baseline_results["time"]["metrics"]
-    random = baseline_results["random"]["metrics"]
-    c = ablation["C"]["metrics"]
-    time_pr = format_number(time["pr_auc"], language)
-    random_pr = format_number(random["pr_auc"], language)
-    time_caught = format_number(time["fraud_amount_caught@3%"], language, True)
-    random_caught = format_number(random["fraud_amount_caught@3%"], language, True)
-    pr = format_number(c["pr_auc"], language)
-    caught = format_number(c["fraud_amount_caught@3%"], language, True)
-    precision = format_number(c["precision@3%"], language, True)
-    gain = _gain(ablation, language)
-    links = "[English](README.md) | [Italiano](README.it.md)"
-    figures = _figures(language, readme=True)
-    run = """```sh
-cd ~/Projects/fraud-alert-queue
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m src.run_baseline
-python -m src.run_stage3
-python -m unittest discover -s tests -v
-```"""
-    if language == "en":
-        return f"""{links}
-
-# Fraud alert queue
-
-I rank transactions for a daily fraud review queue with fixed LightGBM models.
-I measure `TransactionAmt` in USD.
-
-**Model C PR-AUC: {pr} ({gain} relative to A).** At a 3% daily review share, I catch **{caught}** of daily fraud amount with **{precision} precision**.
-
-{figures}
-
-For Stage 2, I get **PR-AUC {time_pr} time and {random_pr} random**. At the same 3% review share, I catch **{time_caught} time and {random_caught} random**.
-
-## Method
-
-I compare A with raw features, B with six prior client-history features, and C with B plus fraud labels available after {LABEL_DELAY_DAYS} days. I keep histories strictly earlier in time and group timestamp ties. I treat missing UIDs as new clients.
-I use 45 test days, a 30-day gap, 15 validation days, seed 42, and validation-only early stopping. I fit categories on fitting rows only and perform no tuning.
-I review the same daily share across comparisons. I compare new and returning clients as separate queues; their budgets are independent.
-
-## Run
-
-I use Python 3.12+ and place `train_transaction.csv` and `train_identity.csv` in `data/raw/`.
-
-{run}
-
-On macOS, I install `libomp` with Homebrew if LightGBM needs it.
-I save [Stage 2 results](reports/baseline_metrics.md), [Stage 3 results](reports/stage3_metrics.md), feature parquet, test scores, and daily CSVs locally.
-
-## Data
-
-I use data from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data); I do not include the data in this repo.
-"""
-    return f"""{links}
-
-# Coda degli avvisi di frode
-
-Ordino le transazioni per una coda giornaliera di controlli antifrode con modelli LightGBM a parametri fissi.
-Uso importi in USD per `TransactionAmt`.
-
-**PR-AUC del Modello C: {pr} ({gain} rispetto ad A).** Con una quota giornaliera di controlli del 3% intercetto il **{caught}** degli importi fraudolenti, con una **precisione del {precision}**.
-
-{figures}
-
-Per la fase 2 ottengo **PR-AUC {time_pr} temporale e {random_pr} casuale**. Con la stessa quota di controlli del 3% intercetto il **{time_caught} nel test temporale e il {random_caught} in quello casuale**.
-
-## Metodo
-
-Confronto A con le variabili originali, B con sei variabili dello storico precedente del cliente e C con B più le etichette di frode disponibili dopo {LABEL_DELAY_DAYS} giorni. Uso soltanto lo storico strettamente precedente e raggruppo le transazioni con lo stesso timestamp. Tratto come nuovi i clienti senza UID.
-Uso 45 giorni di test, 30 giorni di attesa, 15 giorni di validazione, seme 42 e l'arresto anticipato solo sulla validazione. Imparo le categorie solo dall'addestramento e non ottimizzo gli iperparametri.
-Confronto la stessa quota giornaliera di controlli. Per clienti nuovi e già osservati uso code separate con budget indipendenti.
-
-## Esecuzione
-
-Uso Python 3.12+ e inserisco `train_transaction.csv` e `train_identity.csv` in `data/raw/`.
-
-{run}
-
-Su macOS installo `libomp` con Homebrew se LightGBM lo richiede.
-Salvo localmente i [risultati della fase 2](reports/baseline_metrics.it.md), i [risultati della fase 3](reports/stage3_metrics.it.md), le variabili in parquet, i punteggi di test e i CSV giornalieri.
-
-## Dati
-
-Uso i dati della [competizione Kaggle IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection/data); non includo i dati nel repository.
+Aggregati salvati: [variabili grezze](stage3_A_daily_metrics.csv), [storico cliente](stage3_B_daily_metrics.csv) e [frodi note](stage3_C_daily_metrics.csv). Il [rapporto del modello di base](baseline_metrics.it.md) contiene il confronto temporale e casuale.
+I dati provengono da Kaggle IEEE-CIS Fraud Detection e non sono inclusi nel repository.
 """
 
 
 def write_stage3_reports(project_root, baseline_results, ablation, segments, sanity,
                          summaries, feature_count, absolute=None):
-    project_root = Path(project_root)
-    reports = project_root / "reports"
+    root = Path(project_root)
+    reports = root / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     for language in LANGUAGES:
         suffix = "" if language == "en" else ".it"
         text = _report(ablation, segments, sanity, summaries, feature_count, absolute, language)
         (reports / f"stage3_metrics{suffix}.md").write_text(text, encoding="utf-8")
-        if not (reports / "stage4_policy.md").is_file():
-            text = _readme(baseline_results, ablation, language)
-            (project_root / f"README{suffix}.md").write_text(text, encoding="utf-8")
+        path = root / f"README{suffix}.md"
+        if not path.exists():
+            title = "Fraud alert queue" if language == "en" else "Coda dei controlli antifrode"
+            pr = f"{ablation['C']['metrics']['pr_auc']:.2f}"
+            caught = f"{ablation['C']['metrics']['fraud_amount_caught@3%']:.0%}"
+            if language == "it":
+                pr = pr.replace(".", ",")
+            headline = (f"Client history and known fraud reach PR-AUC {pr}, with {caught} of daily fraud USD caught at a 3% review share." if language == "en"
+                        else f"Storico cliente e frodi note raggiungono PR-AUC {pr}, intercettando il {caught} degli importi fraudolenti in USD al giorno con il 3% di controlli.")
+            images = _figures(language).replace("](figures/", "](reports/figures/")
+            note = ("Data comes from Kaggle IEEE-CIS Fraud Detection and is not included in the repo." if language == "en"
+                    else "I dati provengono da Kaggle IEEE-CIS Fraud Detection e non sono inclusi nel repository.")
+            path.write_text(f"# {title}\n\n[English](README.md) | [Italiano](README.it.md)\n\n{headline}\n\n{images}\n\n```sh\npython -m src.run_stage3\n```\n\n{note}\n", encoding="utf-8")
     return ablation_table(ablation), segment_table(segments)
