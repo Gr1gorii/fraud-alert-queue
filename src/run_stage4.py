@@ -20,32 +20,32 @@ def load_stage4_data(project_root=PROJECT_ROOT):
     scores_path = processed / "stage3_test_scores.parquet"
     features_path = processed / "train_stage3.parquet"
     if not scores_path.is_file() or not features_path.is_file():
-        raise FileNotFoundError("I need the saved Stage 3 score and feature parquet files. Run python -m src.run_stage3 first.")
+        raise FileNotFoundError("Saved Stage 3 score and feature parquet files are required. Run python -m src.run_stage3 first.")
     df = pd.read_parquet(scores_path)
     required = {*SOURCE_COLUMNS, "score_B", "score_C"}
     if not required.issubset(df.columns):
-        raise ValueError("I need test metadata and scores for Models B and C.")
+        raise ValueError("Test metadata and scores for the client history and known fraud models are required.")
     source = pd.read_parquet(features_path, columns=[*SOURCE_COLUMNS, "uid_known_fraud"])
     if df.empty or source.empty:
-        raise ValueError("I need nonempty Stage 3 scores and features.")
+        raise ValueError("Stage 3 scores and features must be nonempty.")
     for frame in (df, source):
         if frame.TransactionID.isna().any() or not frame.TransactionID.is_unique:
-            raise ValueError("I need unique, nonmissing TransactionID values.")
+            raise ValueError("TransactionID values must be unique and nonmissing.")
         if not np.isfinite(frame.TransactionDT).all():
-            raise ValueError("I need finite transaction timestamps.")
+            raise ValueError("Transaction timestamps must be finite.")
         if not np.array_equal(frame.day, frame.TransactionDT // 86400):
-            raise ValueError("I need day to match TransactionDT // 86400.")
+            raise ValueError("The day column must match TransactionDT // 86400.")
     test_start = int(source.day.max()) + 1 - TEST_DAYS
     source = source.loc[source.day >= test_start]
     if len(df) != len(source) or set(df.TransactionID) != set(source.TransactionID):
-        raise ValueError("I need scores for exactly the unchanged time test period.")
+        raise ValueError("Scores must cover exactly the unchanged time test period.")
     if "uid_known_fraud" in df.columns:
         df = df.drop(columns="uid_known_fraud")
     df = df.merge(source, on="TransactionID", how="left", sort=False,
                   suffixes=("", "_source"), validate="one_to_one")
     for col in SOURCE_COLUMNS[1:]:
         if not np.array_equal(df[col], df[f"{col}_source"]):
-            raise ValueError(f"I need matching {col} values in the saved scores and features.")
+            raise ValueError(f"The saved scores and features must have matching {col} values.")
     return df.drop(columns=[f"{col}_source" for col in SOURCE_COLUMNS[1:]])
 
 
@@ -54,8 +54,8 @@ def run_stage4(project_root=PROJECT_ROOT):
     reports = project_root / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     df = load_stage4_data(project_root)
-    print(f"I reuse {len(df):,} Stage 3 test scores across {df.day.nunique()} days.", flush=True)
-    print(f"I compare policies at {CAPACITY_SHARE:.1%} of daily transaction volume. Amounts are USD.", flush=True)
+    print(f"Reusing {len(df):,} Stage 3 test scores across {df.day.nunique()} days.", flush=True)
+    print(f"Comparing policies at {CAPACITY_SHARE:.1%} of daily transaction volume. Amounts are USD.", flush=True)
     results = {}
     decisions = df.loc[:, DECISION_COLUMNS].copy()
     for policy in POLICIES:
@@ -80,38 +80,38 @@ def run_stage4(project_root=PROJECT_ROOT):
     print("\n" + table, flush=True)
     for policy in ("P3", "P4"):
         row = best_capacity(curve, policy)
-        print(f"\nI get the peak capacity for {policy_name(policy)} at {row['capacity_share']:.1%}: "
+        print(f"\nPeak capacity for {policy_name(policy)}: {row['capacity_share']:.1%}, "
               f"{row['net_savings_per_day_usd']:,.2f} USD/day net savings.", flush=True)
-        print(f"I need {row['mean_daily_analysts']:.2f} analysts/day on average and "
-              f"a maximum of {int(row['max_daily_analysts'])} at this capacity.", flush=True)
+        print(f"Staffing at this capacity: {row['mean_daily_analysts']:.2f} analysts/day on average, "
+              f"a maximum of {int(row['max_daily_analysts'])}.", flush=True)
         tail = marginal.loc[marginal.policy == policy].sort_values("capacity_share").iloc[-1]
         if tail['added_alerts_per_day'] > 0:
             trend = "still increases" if tail['marginal_net_savings_per_day_usd'] > 0 else "does not increase"
-            print(f"I find that net savings for {policy_name(policy)} {trend} at {tail['capacity_share']:.1%}: "
+            print(f"Net savings for {policy_name(policy)} {trend} at {tail['capacity_share']:.1%}: "
                   f"{tail['marginal_net_savings_per_day_usd']:+,.2f} USD/day from the last step.", flush=True)
             fraud_mean = tail['marginal_fraud_mean_amount_usd']
             amount = f"{fraud_mean:,.2f}" if np.isfinite(fraud_mean) else "N/A"
-            print(f"I get {tail['marginal_precision']:.2%} precision in those extra alerts, "
+            print(f"The extra alerts have {tail['marginal_precision']:.2%} precision, "
                   f"with {amount} USD per fraud. "
                   f"That gives {tail['marginal_gross_per_alert_usd']:.2f} USD/alert against "
                   f"{tail['marginal_cost_per_alert_usd']:.2f} USD/alert in review and friction costs.", flush=True)
         else:
-            print(f"I get no additional alerts for {policy_name(policy)} in the last capacity step.", flush=True)
+            print(f"No additional alerts for {policy_name(policy)} in the last capacity step.", flush=True)
     analyst_tables = []
     for policy in ("P3", "P4"):
         staffing = analyst_metrics_table(analysts, policy)
         analyst_tables.append(staffing)
-        print(f"\nI compare fixed analyst budgets for {policy_name(policy)}.\n\n{staffing}", flush=True)
-    print(f"\nI get the highest simulated net savings with {policy_name(best['policy'])} at "
+        print(f"\nFixed analyst budgets for {policy_name(policy)}.\n\n{staffing}", flush=True)
+    print(f"\nHighest simulated net savings: {policy_name(best['policy'])} at "
           f"{best['capacity_share']:.1%}: {best['net_savings_per_day_usd']:,.2f} USD/day.", flush=True)
-    print(f"I saved the Stage 4 policy reports in {reports}.", flush=True)
+    print(f"Stage 4 policy reports saved in {reports}.", flush=True)
     return {"results": results, "curve": curve, "sensitivity": sensitivity,
             "marginal": marginal, "analysts": analysts, "analyst_tables": analyst_tables,
             "best": best, "table": table}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="I compare fraud policies and costs in USD using saved scores.")
+    parser = argparse.ArgumentParser(description="Compare fraud policies and costs in USD using saved scores.")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     args = parser.parse_args()
     run_stage4(args.project_root)

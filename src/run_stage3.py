@@ -24,15 +24,15 @@ def run_stage3(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
     processed = project_root / "data" / "processed"
     reports = project_root / "reports"
     reports.mkdir(parents=True, exist_ok=True)
-    print(f"I load training CSVs from {raw_dir}.", flush=True)
+    print(f"Loading training CSVs from {raw_dir}.", flush=True)
     df = load_data(raw_dir, processed / "train.parquet")
     raw_columns = df.columns.tolist()
     df = add_client_features(df)
     df.to_parquet(processed / "train_stage3.parquet", index=False)
     sanity = client_sanity(df)
-    print(f"I reconstruct {sanity['n_uids']:,} client IDs.", flush=True)
+    print(f"Reconstructed {sanity['n_uids']:,} client IDs.", flush=True)
     split = time_split(df)
-    print(f"I use {len(split['train']):,} fit rows, {len(split['validation']):,} "
+    print(f"Time split: {len(split['train']):,} fit rows, {len(split['validation']):,} "
           f"validation rows, and {len(split['test']):,} time test rows.", flush=True)
     ablation = {}
     segments = {}
@@ -45,7 +45,7 @@ def run_stage3(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
             columns += list(UID_FEATURES)
         if name == "C":
             columns.append("uid_known_fraud")
-        print(f"I fit {model_name(name)}.", flush=True)
+        print(f"Fitting {model_name(name)}.", flush=True)
         fit = train_baseline(split["train"].loc[:, columns],
                              split["validation"].loc[:, columns], n_jobs=n_jobs)
         scores = predict_scores(fit, split["test"])
@@ -75,13 +75,13 @@ def run_stage3(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
             summaries.append(split_summary(split, best_iteration))
             absolute = evaluate_predictions(split["test"], scores)
             feature_count = len(fit["columns"])
-        print(f"I selected iteration {best_iteration} for {model_name(name)}.", flush=True)
+        print(f"Selected iteration {best_iteration} for {model_name(name)}.", flush=True)
         del fit, scores
         gc.collect()
     score_df.to_parquet(processed / "stage3_test_scores.parquet", index=False)
     del split, score_df
     gc.collect()
-    print("I fit the raw baseline on the random split.", flush=True)
+    print("Fitting the raw baseline on the random split.", flush=True)
     split = random_split(df.loc[:, raw_columns])
     fit = train_baseline(split["train"], split["validation"], n_jobs=n_jobs)
     scores = predict_scores(fit, split["test"])
@@ -108,12 +108,12 @@ def run_stage3(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
                                  segments, sanity, summaries, feature_count, absolute)
     for table in tables:
         print("\n" + table, flush=True)
-    print(f"\nI saved the stage 3 reports in {reports}.", flush=True)
+    print(f"\nStage 3 reports saved in {reports}.", flush=True)
     return tables
 
 
 def main():
-    parser = argparse.ArgumentParser(description="I compare client history and delayed fraud labels.")
+    parser = argparse.ArgumentParser(description="Compare client history and delayed fraud labels.")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--raw-dir", type=Path, default=None)
     parser.add_argument("--n-jobs", type=int, default=4)

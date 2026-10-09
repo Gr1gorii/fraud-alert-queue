@@ -200,7 +200,8 @@ def group_reason(group, row, strongest="", language="en"):
         amount, ratio = row.get("TransactionAmt", np.nan), row.get("amt_to_uid_mean", np.nan)
         text = f"Amount {_money(amount, language)} USD" if _available(amount) and en else f"Importo {_money(amount, language)} USD" if _available(amount) else "Amount unknown" if en else "Importo sconosciuto"
         if _available(ratio):
-            text += f", {_number(ratio, language)}x the client's average" if en else f", {_number(ratio, language)}x la media del cliente"
+            comparison = f"{float(ratio):.1f}"
+            text += f", {comparison}x the client's average" if en else f", {comparison.replace('.', ',')} volte la media del cliente"
         else:
             text += "; average comparison unavailable" if en else "; confronto con la media non disponibile"
         return text, bool(_available(amount) or _available(ratio))

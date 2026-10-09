@@ -17,7 +17,7 @@ A bank cannot review every card payment, so analysts check a small share each da
 
 1. I split by time, reserve the last 45 days for test, and leave a 30-day gap for late chargebacks. The 15 days before the gap provide validation for early stopping.
 2. A client ID combines the card, address, and account start. Client histories use only earlier payments, including strict handling of timestamp ties.
-3. Frauds on payments at least 30 days old become available for automatic blocking when their labels arrive. Adding known fraud to client history lifts returning-client PR-AUC from **0.20 to 0.51**; new clients barely change (**0.64 to 0.64**).
+3. Frauds on payments at least 30 days old become available for automatic blocking when their labels arrive. Adding known fraud to client history lifts returning-client PR-AUC from **0.20 to 0.51**; new clients stay at **0.64**.
 4. Costs assume analyst time, false blocks, and friction for legitimate reviews; labour is already included. Exact unit assumptions and alternatives are in the [cost sensitivity table](reports/stage4_policy.md#sensitivity).
 
 ![Fraud USD stopped by policy at the reference team budget](reports/figures/en/stage4_fraud_stopped.png)

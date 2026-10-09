@@ -92,7 +92,7 @@ def saved_summary(saved):
     }
 
 
-def run_polish(project_root=PROJECT_ROOT):
+def main(project_root=PROJECT_ROOT):
     root = Path(project_root).expanduser().resolve()
     saved = load_saved_results(root)
     reports = root / "reports"
@@ -112,12 +112,8 @@ def run_polish(project_root=PROJECT_ROOT):
     return saved
 
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Refresh reports and figures from saved scores and aggregates.")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     args = parser.parse_args()
-    run_polish(args.project_root)
-
-
-if __name__ == "__main__":
-    main()
+    main(args.project_root)

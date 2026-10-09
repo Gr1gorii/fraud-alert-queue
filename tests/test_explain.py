@@ -126,10 +126,29 @@ class ExplanationTests(unittest.TestCase):
         self.assertTrue(readable)
         self.assertIn("300 USD", en)
         self.assertIn("0.5x", en)
-        self.assertIn("0,5x", it)
+        self.assertIn("0,5 volte la media del cliente", it)
         self.assertNotIn("higher", en)
         self.assertNotIn("maggiore", it)
         self.assertIn("USD", group_reason("client_history", {"uid_prev_mean_amt": 123})[0])
+
+    def test_amount_ratio_has_one_decimal_in_each_language(self):
+        row = {"TransactionAmt": 443, "amt_to_uid_mean": 1.206}
+        en, _ = group_reason("amount", row)
+        it, _ = group_reason("amount", row, language="it")
+        self.assertEqual(en, "Amount 440 USD, 1.2x the client's average")
+        self.assertEqual(it, "Importo 440 USD, 1,2 volte la media del cliente")
+        self.assertNotIn("x", it)
+
+    def test_missing_amount_ratio_does_not_add_a_comparison_number(self):
+        for ratio in (None, np.nan, pd.NA):
+            for language in ("en", "it"):
+                with self.subTest(ratio=ratio, language=language):
+                    text, readable = group_reason("amount", {"TransactionAmt": 443, "amt_to_uid_mean": ratio}, language=language)
+                    self.assertTrue(readable)
+                    self.assertIn("440 USD", text)
+                    self.assertIn("unavailable" if language == "en" else "non disponibile", text)
+                    self.assertNotIn("nan", text)
+                    self.assertNotIn("volte", text)
 
     def test_zero_known_fraud_flag_and_missing_uid_are_not_positive_labels(self):
         zero = group_reason("known_fraud", {"uid": "known", "uid_known_fraud": 0})[0]

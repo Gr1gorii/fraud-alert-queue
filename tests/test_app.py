@@ -80,8 +80,8 @@ class AppTests(unittest.TestCase):
                 expected = evaluate_policy(df, "P4", review_capacity=60 * reference)["metrics"]
                 self.assert_metrics(app, expected, "en")
                 self.assertEqual(app.slider(key="analysts").value, reference)
-                self.assertEqual(app.selectbox(key="policy_en").value, "P4")
-                self.assertEqual(app.selectbox(key="policy_en").options, [policy_name("P3"), policy_name("P4")])
+                self.assertEqual(app.radio(key="policy_en").value, "P4")
+                self.assertEqual(app.radio(key="policy_en").options, [policy_name("P3"), policy_name("P4")])
                 self.assertEqual(app.subheader[0].value, "Fraud alert queue")
                 self.assertEqual(app.expander[0].label, "Assumptions")
                 self.assertEqual(app.table[0].value.columns.tolist(), ["Amount (USD)", "Score", "Fraud (known later)", "Why flagged"])
@@ -92,14 +92,14 @@ class AppTests(unittest.TestCase):
                 self.assert_metrics(app, expected, "it")
                 self.assertEqual(app.subheader[0].value, "Coda dei controlli antifrode")
                 self.assertEqual(app.expander[0].label, "Ipotesi")
-                self.assertEqual(app.selectbox(key="policy_it").options, [policy_name("P3", "it"), policy_name("P4", "it")])
+                self.assertEqual(app.radio(key="policy_it").options, [policy_name("P3", "it"), policy_name("P4", "it")])
                 self.assertEqual(
                     [metric.label for metric in app.metric],
                     ["Risparmio netto (USD/giorno)", "Importi fraudolenti fermati (%)", "Controlli medi/giorno", "Precisione dei controlli (%)"],
                 )
 
                 app.slider(key="analysts").set_value(20)
-                app.selectbox(key="policy_it").set_value("P3")
+                app.radio(key="policy_it").set_value("P3")
                 app.number_input(key="review_cost").set_value(9.0)
                 app.number_input(key="false_cost").set_value(22.0)
                 app.number_input(key="friction").set_value(3.0)
@@ -110,7 +110,7 @@ class AppTests(unittest.TestCase):
                 )
                 self.assert_metrics(app, result["metrics"], "it")
                 self.assertEqual(app.slider(key="analysts").value, 20)
-                self.assertEqual(app.selectbox(key="policy_it").value, "P3")
+                self.assertEqual(app.radio(key="policy_it").value, "P3")
                 self.assertEqual([app.number_input(key=key).value for key in ("review_cost", "false_cost", "friction")], [9, 22, 3])
                 day = app.selectbox(key="test_day").value
                 queue = result["decisions"].loc[
@@ -139,12 +139,12 @@ class AppTests(unittest.TestCase):
                 self.assertLessEqual(app.number_input(key="queue_page").value, (expected_count + 9) // 10)
                 app.radio(key="language").set_value("English").run()
                 self.assert_metrics(app, result["metrics"], "en")
-                self.assertEqual(app.selectbox(key="policy_en").value, "P3")
-                self.assertEqual(app.selectbox(key="policy_en").options, [policy_name("P3"), policy_name("P4")])
+                self.assertEqual(app.radio(key="policy_en").value, "P3")
+                self.assertEqual(app.radio(key="policy_en").options, [policy_name("P3"), policy_name("P4")])
                 app.radio(key="language").set_value("Italiano").run()
                 self.assert_metrics(app, result["metrics"], "it")
-                self.assertEqual(app.selectbox(key="policy_it").value, "P3")
-                self.assertEqual(app.selectbox(key="policy_it").options, [policy_name("P3", "it"), policy_name("P4", "it")])
+                self.assertEqual(app.radio(key="policy_it").value, "P3")
+                self.assertEqual(app.radio(key="policy_it").options, [policy_name("P3", "it"), policy_name("P4", "it")])
         finally:
             st.cache_data.clear()
 

@@ -17,7 +17,7 @@ Una banca non può controllare ogni pagamento con carta: gli analisti ne esamina
 
 1. Ho scelto una divisione temporale: gli ultimi 45 giorni servono per il test, separati dall'addestramento da 30 giorni di attesa per i chargeback tardivi. I 15 giorni prima di questo intervallo servono per la validazione e l'arresto anticipato.
 2. L'identificativo del cliente combina carta, indirizzo e inizio dell'account. Lo storico comprende soltanto pagamenti precedenti e tratta insieme quelli con lo stesso timestamp.
-3. Le frodi su pagamenti di almeno 30 giorni prima diventano utilizzabili per il blocco automatico quando arriva l'etichetta. Aggiungendo le frodi note allo storico, il PR-AUC dei clienti già osservati passa da **0,20 a 0,51**; per i nuovi cambia poco (**0,64 contro 0,64**).
+3. Le frodi su pagamenti di almeno 30 giorni prima diventano utilizzabili per il blocco automatico quando arriva l'etichetta. Aggiungendo le frodi note allo storico, il PR-AUC dei clienti già osservati passa da **0,20 a 0,51**; per i nuovi clienti resta **0,64**.
 4. I costi ipotizzati comprendono lavoro degli analisti, blocchi errati e attrito per i controlli legittimi; il lavoro è già incluso nel costo del controllo. Le ipotesi precise e gli scenari alternativi sono nella [tabella di sensibilità](reports/stage4_policy.it.md#sensibilità).
 
 ![Importi fraudolenti fermati per regola con l'organico di riferimento](reports/figures/it/stage4_fraud_stopped.png)

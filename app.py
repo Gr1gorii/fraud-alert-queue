@@ -94,12 +94,11 @@ def main():
     with st.sidebar:
         analysts = st.slider(text["analysts"], 1, 20, reference, key="analysts")
         current_policy = st.session_state.get("selected_policy", "P4")
-        policy = st.selectbox(
+        policy = st.radio(
             text["policy"], ("P3", "P4"), index=0 if current_policy == "P3" else 1,
             format_func=lambda code: policy_name(code, language), key=f"policy_{language}",
         )
         st.session_state["selected_policy"] = policy
-        st.caption(policy_name(policy, language))
         with st.expander(text["assumptions"], expanded=False):
             review_cost = st.number_input(text["review_cost"], min_value=0.0, value=float(REVIEW_COST_USD), step=1.0, key="review_cost")
             false_cost = st.number_input(text["false_cost"], min_value=0.0, value=float(FALSE_BLOCK_COST_USD), step=1.0, key="false_cost")

@@ -224,9 +224,9 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
     project_root = Path(project_root).expanduser().resolve()
     raw_dir = project_root / "data" / "raw" if raw_dir is None else Path(raw_dir).expanduser()
     reports_dir = project_root / "reports"
-    print(f"I load training CSVs from {raw_dir}.", flush=True)
+    print(f"Loading training CSVs from {raw_dir}.", flush=True)
     df = load_data(raw_dir, project_root / "data" / "processed" / "train.parquet")
-    print(f"I joined {len(df):,} rows and {len(df.columns)} columns.", flush=True)
+    print(f"Joined {len(df):,} rows and {len(df.columns)} columns.", flush=True)
     results = {}
     summaries = []
     feature_count = 0
@@ -235,7 +235,7 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
     for split_function in (time_split, random_split):
         split = split_function(df)
         name = split["name"]
-        print(f"I use the {name} split: {len(split['train']):,} fit rows, "
+        print(f"{name.capitalize()} split: {len(split['train']):,} fit rows, "
               f"{len(split['validation']):,} validation rows, {len(split['gap']):,} "
               f"gap rows, and {len(split['test']):,} test rows.", flush=True)
         fit = train_baseline(split["train"], split["validation"], n_jobs=n_jobs)
@@ -251,7 +251,7 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
         feature_count = len(fit["columns"])
         result["daily_metrics"].to_csv(reports_dir / f"{name}_daily_metrics.csv", index=False)
         result["capacity_curve"].to_csv(reports_dir / f"{name}_capacity_curve.csv", index=False)
-        print(f"I selected iteration {best_iteration} for the {name} model.", flush=True)
+        print(f"Selected iteration {best_iteration} for the {name} model.", flush=True)
         del split, fit, scores
         gc.collect()
     plot_figures(results, reports_dir / "figures")
@@ -266,12 +266,12 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
             (project_root / f"README{suffix}.md").write_text(readme_text(results, language), encoding="utf-8")
     table = metrics_table(results)
     print("\n" + table, flush=True)
-    print(f"\nI saved the reports in {reports_dir}.", flush=True)
+    print(f"\nReports saved in {reports_dir}.", flush=True)
     return table
 
 
 def main():
-    parser = argparse.ArgumentParser(description="I compare two fixed fraud detection baselines.")
+    parser = argparse.ArgumentParser(description="Compare two fixed fraud detection baselines.")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--raw-dir", type=Path, default=None)
     parser.add_argument("--n-jobs", type=int, default=4, help="LightGBM CPU threads (default: 4)")

@@ -141,13 +141,18 @@ def reference_results(results, analysts):
     return out
 
 
-def _axes(title, xlabel, ylabel):
+def _axes(title, xlabel, ylabel, language="en"):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
     fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI, facecolor="white")
     ax.set_facecolor("white")
     ax.set(title=fill(title, 85), xlabel=xlabel, ylabel=ylabel)
+    if "USD" in xlabel:
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: _number(value, language, 0)))
+    if "USD" in ylabel:
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: _number(value, language, 0)))
     ax.grid(axis="y", color="#D9D9D9", linewidth=.7)
     ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
@@ -170,7 +175,7 @@ def _plot_analysts(analysts, path, language):
              else f"Il risparmio con lo storico frodi smette di crescere oltre {count} analisti")
     xlabel = "Analysts (count)" if language == "en" else "Analisti (numero)"
     ylabel = "Net savings (USD/day)" if language == "en" else "Risparmio netto (USD/giorno)"
-    fig, ax = _axes(title, xlabel, ylabel)
+    fig, ax = _axes(title, xlabel, ylabel, language)
     for name, color, style in (("P3", GREY, "--"), ("P4", BLUE, "-")):
         df = analysts.loc[analysts["policy"].eq(name)].sort_values("analysts")
         ax.plot(df["analysts"], df["net_savings_per_day_usd"], color=color, linestyle=style,
@@ -188,12 +193,12 @@ def _plot_fraud(results, analysts, path, language):
     count = reference_team(analysts)
     fixed = reference_results(results, analysts)
     gain = _stopped_daily(fixed["P3"]["metrics"]) - _stopped_daily(fixed["P1"]["metrics"])
-    title = (f"Model review stops USD {money(gain, language)}/day beyond the blocking rule" if language == "en"
-             else f"La coda del modello ferma USD {money(gain, language)}/giorno oltre la regola di blocco")
+    title = (f"Model review stops USD {money(gain, language, rounded=True)}/day beyond the blocking rule" if language == "en"
+             else f"La coda del modello ferma USD {money(gain, language, rounded=True)}/giorno oltre la regola di blocco")
     xlabel = (f"Policies with {count} analysts (up to {count * ALERTS_PER_ANALYST_PER_DAY} reviews/day)" if language == "en"
               else f"Regole con {count} analisti (fino a {count * ALERTS_PER_ANALYST_PER_DAY} controlli/giorno)")
     ylabel = "Fraud amount stopped (USD/day)" if language == "en" else "Importi fraudolenti fermati (USD/giorno)"
-    fig, ax = _axes(title, xlabel, ylabel)
+    fig, ax = _axes(title, xlabel, ylabel, language)
     blocked = [fixed[name]["metrics"]["blocked_fraud_amount_per_day_usd"] for name in POLICIES]
     reviewed = [fixed[name]["metrics"]["reviewed_fraud_amount_per_day_usd"] for name in POLICIES]
     ax.bar(range(4), blocked, color=LIGHT_GREY, label="Blocked" if language == "en" else "Bloccati")
@@ -212,7 +217,7 @@ def _plot_marginal(analysts, path, language):
              else f"Il primo analista aggiunge USD {money(first, language)}/giorno; il numero {count} aggiunge USD {money(last, language)}")
     xlabel = "Added analyst (count)" if language == "en" else "Analista aggiunto (numero)"
     ylabel = "Added net savings (USD/day)" if language == "en" else "Risparmio netto aggiunto (USD/giorno)"
-    fig, ax = _axes(title, xlabel, ylabel)
+    fig, ax = _axes(title, xlabel, ylabel, language)
     for name, offset, color in (("P3", -.2, GREY), ("P4", .2, BLUE)):
         df = analysts.loc[analysts["policy"].eq(name) & analysts["analysts"].between(1, MARGINAL_ANALYSTS)].sort_values("analysts")
         ax.bar(df["analysts"] + offset, df["savings_added_by_analyst_usd"], width=.4, color=color,
@@ -231,7 +236,7 @@ def _plot_capacity(curve, path, language):
              else f"Il risparmio con lo storico frodi raggiunge il massimo al {pct} di controlli giornalieri")
     xlabel = "Daily review share (%)" if language == "en" else "Quota giornaliera di controllo (%)"
     ylabel = "Net savings (USD/day)" if language == "en" else "Risparmio netto (USD/giorno)"
-    fig, ax = _axes(title, xlabel, ylabel)
+    fig, ax = _axes(title, xlabel, ylabel, language)
     for name, color, style in (("P3", GREY, "--"), ("P4", BLUE, "-")):
         df = curve.loc[curve["policy"].eq(name)].sort_values("capacity_share")
         ax.plot(df["capacity_share"] * 100, df["net_savings_per_day_usd"], color=color, linestyle=style,

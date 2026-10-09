@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from src.display import money, reference_team
-from src.report_stage4 import _plot_analysts, _plot_fraud, _plot_marginal
+from src.report_stage4 import _plot_analysts, _plot_capacity, _plot_fraud, _plot_marginal
 from src.report_stage4 import policy_table, reference_results
 
 
@@ -143,11 +143,28 @@ class PresentationTests(unittest.TestCase):
         table = policy_table(fixed, fixed=True)
         self.assertIn(money(net), table)
         self.assertNotEqual(money(net), money(net, rounded=True))
+        fraud_amounts = [2865.42, 2950.11, 2933.53]
+        gain = sum(fraud_amounts)
+        shown = analysts.copy()
+        shown.loc[shown["policy"].eq("P3") & shown["analysts"].eq(3), "reviewed_fraud_amount_per_day_usd"] = gain
+        curve = pd.DataFrame({"policy": ["P3", "P3", "P4", "P4"],
+                              "capacity_share": [.03, .1, .03, .1],
+                              "net_savings_per_day_usd": [1000.123, 8000.321, 2000.234, 9000.456]})
         for language in ("en", "it"):
-            axes = [self.figure(_plot_fraud, results, analysts, language=language),
+            axes = [self.figure(_plot_fraud, results, shown, language=language),
                     self.figure(_plot_marginal, analysts, language=language),
-                    self.figure(_plot_analysts, analysts, language=language)]
+                    self.figure(_plot_analysts, analysts, language=language),
+                    self.figure(_plot_capacity, curve, language=language)]
+            expected = "8,750" if language == "en" else "8.750"
+            self.assertIn(f"USD {expected}", axes[0].get_title())
+            self.assertNotIn(money(gain, language), axes[0].get_title())
+            self.assertAlmostEqual(axes[0].containers[1][2].get_height(), gain)
+            np.testing.assert_allclose(axes[3].lines[0].get_ydata(), [1000.123, 8000.321])
+            np.testing.assert_allclose(axes[3].lines[1].get_ydata(), [2000.234, 9000.456])
             for ax in axes:
+                self.assertIn("USD", ax.get_ylabel())
+                formatter = ax.yaxis.get_major_formatter()
+                self.assertEqual(formatter(9000, 0), "9,000" if language == "en" else "9.000")
                 labels = [ax.get_title(), ax.get_xlabel(), ax.get_ylabel(),
                           *[label.get_text() for label in ax.get_xticklabels()]]
                 if ax.get_legend() is not None:
