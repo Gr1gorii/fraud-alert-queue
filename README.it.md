@@ -4,9 +4,12 @@
 
 Simulo blocchi antifrode e organico dei controlli giornalieri per confrontare il risparmio netto in USD.
 
-**Con P4 e cinque analisti ottengo USD 8.801,49/giorno; il sesto aggiunge USD 134,70/giorno.** Assumo 60 controlli/analista/giorno: cinque analisti hanno un budget fisso di 300 controlli al giorno.
+**Con P4 e cinque analisti ottengo USD 8.801,49/giorno; il sesto aggiunge solo USD 134,70/giorno.** Assumo 60 controlli/analista/giorno: cinque analisti hanno un budget fisso di 300 controlli al giorno.
 
 ![Confronto il risparmio netto giornaliero in USD per analisti disponibili](reports/figures/it/stage4_analyst_savings.png)
+
+![Esamino le regole salvate nella demo locale](reports/screenshots/it/overview.png)
+![Esamino la coda dei controlli e i motivi del Modello C](reports/screenshots/it/alert_queue.png)
 
 Allo stesso budget di cinque analisti ottengo **USD 8.135,26/giorno con P3 rispetto a USD 1.966,44/giorno con P1 e soli blocchi**, con un incremento di **USD 6.168,82/giorno**.
 Esamino quote e organico dopo aver osservato gli stessi 45 giorni di test. Considero questi risultati in USD una simulazione descrittiva.
@@ -40,6 +43,24 @@ python -m unittest discover -s tests -v
 ```
 
 Su macOS installo `libomp` con Homebrew se LightGBM lo richiede. Salvo localmente i risultati della [fase 2](reports/baseline_metrics.it.md), della [fase 3](reports/stage3_metrics.it.md) e della [fase 4](reports/stage4_policy.it.md).
+
+## Avvio della demo
+
+Preparo le spiegazioni del Modello C offline. Quando serve ricostruisco l'addestramento a parametri fissi e verifico tutti i punteggi di test salvati prima di memorizzare i contributi. Nell'app leggo decisioni e spiegazioni salvate; non addestro modelli.
+
+```sh
+python -m src.explain
+streamlit run app.py
+```
+
+Mostro l'intera coda dei controlli. Salvo i motivi soltanto per l'unione delle code P3/P4 con una quota del 20% di tutte le transazioni giornaliere, escludendo i blocchi automatici dall'ordinamento; fuori da questa copertura non sono disponibili. I contributi descrivono il punteggio del Modello C, non l'esito della frode. P3 ordina secondo il Modello B e mostra i motivi del Modello C.
+
+Installo Chromium una volta e acquisisco soltanto l'app locale in entrambe le lingue a 1440x900:
+
+```sh
+python -m playwright install chromium
+python -m src.screenshots
+```
 
 ## Dati
 

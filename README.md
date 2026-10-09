@@ -4,9 +4,12 @@
 
 I simulate fraud blocks and daily review staffing to compare net savings in USD.
 
-**With P4 and five analysts, I get USD 8,801.49/day; the sixth adds USD 134.70/day.** I allow 60 alerts/analyst/day, so five analysts have a fixed 300-alert daily budget.
+**With P4 and five analysts, I get USD 8,801.49/day; the sixth adds only USD 134.70/day.** I allow 60 alerts/analyst/day, so five analysts have a fixed 300-alert daily budget.
 
 ![I compare daily net savings in USD by available analysts](reports/figures/en/stage4_analyst_savings.png)
+
+![I inspect saved policies in the local demo](reports/screenshots/en/overview.png)
+![I inspect the review queue and Model C reasons](reports/screenshots/en/alert_queue.png)
 
 At that same five-analyst budget, I get **USD 8,135.26/day with P3 versus USD 1,966.44/day with block-only P1**, an increment of **USD 6,168.82/day**.
 I inspect capacities and staffing after observing the same 45 test days. I treat these USD results as a descriptive simulation.
@@ -40,6 +43,24 @@ python -m unittest discover -s tests -v
 ```
 
 On macOS, I install `libomp` with Homebrew if LightGBM needs it. I save [Stage 2](reports/baseline_metrics.md), [Stage 3](reports/stage3_metrics.md), and [Stage 4](reports/stage4_policy.md) results locally.
+
+## Run the demo
+
+I prepare Model C explanations offline. I recover the fixed fit when needed and verify all its saved test scores before saving contributions. I read saved decisions and explanations in the app; I fit no models there.
+
+```sh
+python -m src.explain
+streamlit run app.py
+```
+
+I show the full review queue. I save reasons only for the union of P3/P4 queues at a 20% share of all daily transactions, excluding automatic blocks from ranking; other reasons are unavailable. Contributions describe Model C's score, not the fraud outcome. P3 ranks with Model B and displays Model C reasons.
+
+I install Chromium once, then capture only the local app in both languages at 1440x900:
+
+```sh
+python -m playwright install chromium
+python -m src.screenshots
+```
 
 ## Data
 
