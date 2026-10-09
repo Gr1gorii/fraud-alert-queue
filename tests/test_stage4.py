@@ -11,7 +11,8 @@ import pandas as pd
 from PIL import Image
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
-FIGURES = ("stage4_net_savings.png", "stage4_fraud_stopped.png")
+FIGURES = ("stage4_net_savings.png", "stage4_fraud_stopped.png",
+           "stage4_marginal_net_savings.png", "stage4_analyst_savings.png")
 
 
 def file_hash(path):
@@ -44,6 +45,19 @@ def write_fixture(project_root):
     return feature_path, score_path
 
 
+def markdown_tables(text):
+    tables, rows = [], []
+    for line in text.splitlines():
+        if line.lstrip().startswith("|"):
+            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+        elif rows:
+            tables.append(rows)
+            rows = []
+    if rows:
+        tables.append(rows)
+    return tables
+
+
 class Stage4Tests(unittest.TestCase):
     def run_command(self, project_root):
         env = os.environ.copy()
@@ -70,14 +84,31 @@ class Stage4Tests(unittest.TestCase):
             summary = pd.read_csv(project_root / "reports" / "stage4_policy_metrics.csv")
             curve = pd.read_csv(project_root / "reports" / "stage4_capacity_curve.csv")
             sensitivity = pd.read_csv(project_root / "reports" / "stage4_sensitivity.csv")
+            marginal = pd.read_csv(project_root / "reports" / "stage4_marginal_value.csv")
+            analysts = pd.read_csv(project_root / "reports" / "stage4_analyst_metrics.csv")
             self.assertEqual(set(summary["policy"]), {"P1", "P2", "P3", "P4"})
-            self.assertEqual(len(curve), 61)
-            self.assertEqual(len(sensitivity), 9)
+            self.assertEqual(len(curve), 151)
+            self.assertEqual(len(sensitivity), 27)
+            self.assertEqual(len(marginal), 150)
+            self.assertEqual(len(analysts), 63)
             self.assertEqual(curve.loc[curve["policy"] == "P1", "capacity_share"].tolist(), [0.])
             for row in summary.to_dict("records"):
                 self.assertEqual(row["n_days"], 45)
                 self.assertAlmostEqual(row["net_savings_per_day_usd"], row["net_savings_usd"] / 45)
                 self.assertAlmostEqual(row["fraud_amount_stopped_share"], row["fraud_amount_stopped_usd"] / row["total_fraud_amount_usd"])
+                self.assertEqual(row["review_friction_cost_usd"], row["reviewed_legit_count"] * 2)
+                self.assertAlmostEqual(row["net_savings_usd"], row["fraud_amount_stopped_usd"] - row["review_cost_usd"] - row["false_block_cost_usd"] - row["review_friction_cost_usd"])
+            staff_tables = [table for table in markdown_tables(result.stdout) if table[0][:2] == ["Policy", "Analysts"]]
+            self.assertEqual(len(staff_tables), 2)
+            self.assertEqual({table[2][0] for table in staff_tables}, {"P3", "P4"})
+            for table in staff_tables:
+                self.assertEqual(len(table[2:]), 20)
+                self.assertEqual([int(row[1]) for row in table[2:]], list(range(1, 21)))
+            for policy in ("P2", "P3", "P4"):
+                rows = analysts.loc[analysts["policy"] == policy].sort_values("analysts")
+                self.assertEqual(rows["analysts"].tolist(), list(range(21)))
+                self.assertTrue(rows.iloc[1:]["mean_actual_alerts_per_day"].eq(4 if policy == "P2" else 2).all())
+                self.assertTrue(rows.iloc[2:]["savings_added_by_analyst_usd"].eq(0).all())
             decisions = pd.read_parquet(project_root / "data" / "processed" / "stage4_decisions.parquet")
             self.assertEqual(len(decisions), 180)
             self.assertEqual(decisions["TransactionID"].nunique(), 180)

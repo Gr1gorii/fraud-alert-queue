@@ -6,9 +6,11 @@ import pandas as pd
 
 from src.policy import (
     apply_policy,
+    analyst_table,
     best_capacity,
     evaluate_capacities,
     evaluate_policy,
+    marginal_value,
     sensitivity_table,
 )
 
@@ -29,9 +31,9 @@ class PolicyTests(unittest.TestCase):
     def test_exact_money_counts_and_period_ratios(self):
         expected = {
             "P1": (300., 0., 285., 0, 0),
-            "P2": (0., 300., 285., 3, 2),
-            "P3": (300., 40., 310., 3, 1),
-            "P4": (300., 50., 320., 3, 1),
+            "P2": (0., 300., 283., 3, 2),
+            "P3": (300., 40., 306., 3, 1),
+            "P4": (300., 50., 316., 3, 1),
         }
         for policy, (blocked, reviewed, net, reviews, reviewed_frauds) in expected.items():
             with self.subTest(policy=policy):
@@ -46,7 +48,9 @@ class PolicyTests(unittest.TestCase):
                 self.assertAlmostEqual(m["fraud_amount_stopped_share"], (blocked + reviewed) / 390)
                 self.assertEqual(m["reviewed_count"], reviews)
                 self.assertEqual(m["reviewed_fraud_count"], reviewed_frauds)
+                self.assertEqual(m["reviewed_legit_count"], reviews - reviewed_frauds)
                 self.assertEqual(m["review_cost_usd"], reviews * 5)
+                self.assertEqual(m["review_friction_cost_usd"], (reviews - reviewed_frauds) * 2)
                 self.assertEqual(m["false_block_count"], 0 if policy == "P2" else 1)
                 self.assertEqual(m["false_block_cost_usd"], 0 if policy == "P2" else 15)
                 self.assertEqual(m["net_savings_usd"], net)
@@ -110,7 +114,7 @@ class PolicyTests(unittest.TestCase):
         review = evaluate_policy(df, "P2", capacity_share=.25)["metrics"]
         self.assertTrue(np.isnan(review["block_precision"]))
         self.assertEqual(review["review_precision"], 0)
-        self.assertEqual(review["net_savings_usd"], -15)
+        self.assertEqual(review["net_savings_usd"], -21)
         empty = evaluate_policy(df.iloc[:0], "P4")
         self.assertTrue(empty["daily_metrics"].empty)
         self.assertTrue(empty["decisions"].empty)
@@ -123,9 +127,12 @@ class PolicyTests(unittest.TestCase):
         for share in (-.01, 1.01, np.nan, np.inf, True):
             with self.subTest(share=share), self.assertRaises(ValueError):
                 apply_policy(df, "P2", share)
-        for key, value in (("review_cost_usd", -1), ("false_block_cost_usd", np.nan)):
+        for key, value in (("review_cost_usd", -1), ("false_block_cost_usd", np.nan), ("review_friction_usd", -1)):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 evaluate_policy(df, "P1", **{key: value})
+        for capacity in (-1, .5, 60., True, np.nan):
+            with self.subTest(capacity=capacity), self.assertRaises(ValueError):
+                apply_policy(df, "P4", review_capacity=capacity)
         for column, value in (("score_C", np.nan), ("uid_known_fraud", 2), ("day", 1.5)):
             bad = df.copy()
             bad[column] = bad[column].astype(float)
@@ -152,21 +159,121 @@ class PolicyTests(unittest.TestCase):
     def test_sensitivity_reuses_counts_and_keeps_unit_costs_separate(self):
         curve = evaluate_capacities(toy_data())
         before = curve.copy(deep=True)
-        self.assertEqual(len(curve), 61)
+        self.assertEqual(len(curve), 151)
         self.assertEqual(curve.loc[curve["policy"] == "P1", "capacity_share"].tolist(), [0.])
         with patch("src.policy.apply_policy", side_effect=AssertionError("I reuse saved decisions.")):
             sensitivity = sensitivity_table(curve)
-        self.assertEqual(len(sensitivity), 9)
-        self.assertEqual(len(sensitivity[["review_cost_usd", "false_block_cost_usd"]].drop_duplicates()), 9)
+        self.assertEqual(len(sensitivity), 27)
+        self.assertEqual(len(sensitivity[["review_cost_usd", "false_block_cost_usd", "review_friction_usd"]].drop_duplicates()), 27)
         for row in sensitivity.to_dict("records"):
             self.assertEqual(row["selected_review_cost_usd"], row["reviewed_count"] * row["review_cost_usd"])
             self.assertEqual(row["selected_false_block_cost_usd"], row["false_block_count"] * row["false_block_cost_usd"])
-            expected = row["fraud_amount_stopped_usd"] - row["selected_review_cost_usd"] - row["selected_false_block_cost_usd"]
+            self.assertEqual(row["selected_review_friction_cost_usd"], row["reviewed_legit_count"] * row["review_friction_usd"])
+            expected = row["fraud_amount_stopped_usd"] - row["selected_review_cost_usd"] - row["selected_false_block_cost_usd"] - row["selected_review_friction_cost_usd"]
             self.assertEqual(row["net_savings_usd"], expected)
             self.assertAlmostEqual(row["net_savings_per_day_usd"], expected / 3)
-            self.assertEqual(row["capacity_share"], .005)
-            self.assertEqual(row["policy"], "P2" if row["false_block_cost_usd"] == 50 else "P4")
+            self.assertEqual(row["capacity_share"], .26)
+            self.assertEqual(row["policy"], "P2" if row["false_block_cost_usd"] == 50 else "P3")
         pd.testing.assert_frame_equal(curve, before)
+
+    def test_zero_friction_recovers_previous_money_and_never_charges_frauds(self):
+        expected = {"P1": 285., "P2": 285., "P3": 310., "P4": 320.}
+        for policy, net in expected.items():
+            with self.subTest(policy=policy):
+                metrics = evaluate_policy(toy_data(), policy, .25, review_friction_usd=0)["metrics"]
+                self.assertEqual(metrics["net_savings_usd"], net)
+                self.assertEqual(metrics["review_friction_cost_usd"], 0)
+        for label in (0, 1):
+            df = toy_data().assign(isFraud=label)
+            metrics = evaluate_policy(df, "P2", .25)["metrics"]
+            self.assertEqual(metrics["review_friction_cost_usd"], 0 if label else 6)
+
+    def test_absolute_budget_depends_on_staffing_and_caps_nonblocked_rows(self):
+        df = pd.DataFrame({
+            "TransactionID": np.arange(1, 301), "day": [1] * 100 + [2] * 200,
+            "TransactionAmt": 10., "isFraud": np.arange(300) % 2,
+            "uid_known_fraud": [1] * 30 + [0] * 70 + [1] * 90 + [0] * 110,
+            "score_B": np.linspace(1, 0, 300), "score_C": np.linspace(1, 0, 300),
+        })
+        result = evaluate_policy(df, "P4", review_capacity=60)
+        self.assertEqual(result["daily_metrics"]["reviewed_count"].tolist(), [60, 60])
+        m = result["metrics"]
+        self.assertEqual(m["budget_kind"], "absolute")
+        self.assertEqual(m["review_capacity"], 60)
+        self.assertTrue(np.isnan(m["capacity_share"]))
+        self.assertAlmostEqual(m["mean_daily_volume_share"], .45)
+        self.assertAlmostEqual(m["pooled_capacity_share"], .4)
+        self.assertEqual(m["mean_daily_analysts"], 1)
+        self.assertEqual(m["max_daily_analysts"], 1)
+        self.assertEqual(m["review_full_time_equivalent"], 1)
+        share = evaluate_policy(df, "P4", capacity_share=.03)
+        self.assertEqual(share["daily_metrics"]["reviewed_count"].tolist(), [3, 6])
+        clipped = df.copy()
+        clipped.loc[clipped["day"] == 2, "uid_known_fraud"] = [1] * 190 + [0] * 10
+        result = evaluate_policy(clipped, "P4", review_capacity=60)
+        self.assertEqual(result["daily_metrics"]["reviewed_count"].tolist(), [60, 10])
+        self.assertAlmostEqual(result["metrics"]["review_full_time_equivalent"], 70 / 120)
+        self.assertAlmostEqual(result["metrics"]["mean_daily_volume_share"], .325)
+        self.assertAlmostEqual(result["metrics"]["pooled_capacity_share"], 70 / 300)
+        zero = evaluate_policy(df, "P4", review_capacity=0)
+        self.assertEqual(zero["metrics"]["reviewed_count"], 0)
+
+    def test_marginal_batches_start_from_zero_reviews_and_telescope(self):
+        curve = evaluate_capacities(toy_data())
+        marginal = marginal_value(curve)
+        self.assertEqual(len(marginal), 150)
+        baseline = curve.loc[curve["policy"] == "P1"].iloc[0]
+        for policy in ("P2", "P3", "P4"):
+            rows = marginal.loc[marginal["policy"] == policy].sort_values("capacity_share")
+            last = curve.loc[curve["policy"] == policy].sort_values("capacity_share").iloc[-1]
+            reference = 0 if policy == "P2" else baseline["net_savings_usd"]
+            self.assertAlmostEqual(rows["added_net_savings_usd"].sum(), last["net_savings_usd"] - reference)
+            self.assertEqual(rows["added_reviewed_count"].sum(), last["reviewed_count"])
+            self.assertEqual(rows["added_reviewed_fraud_count"].sum(), last["reviewed_fraud_count"])
+            self.assertEqual(rows.iloc[0]["previous_capacity_share"], 0)
+        first = marginal.loc[marginal["policy"] == "P3"].sort_values("capacity_share").iloc[0]
+        self.assertEqual(first["added_net_savings_usd"], 21)
+        self.assertAlmostEqual(first["marginal_precision"], 1 / 3)
+        self.assertEqual(first["marginal_fraud_mean_amount_usd"], 40)
+        self.assertAlmostEqual(first["marginal_gross_per_alert_usd"], 40 / 3)
+        self.assertAlmostEqual(first["marginal_cost_per_alert_usd"], 5 + 2 * 2 / 3)
+        self.assertAlmostEqual(first["marginal_net_savings_per_day_usd"], 7)
+        batch = marginal.loc[(marginal["policy"] == "P3") & marginal["capacity_share"].eq(.26)].iloc[0]
+        self.assertEqual(batch["added_reviewed_count"], 2)
+        self.assertEqual(batch["added_reviewed_fraud_count"], 1)
+        self.assertEqual(batch["marginal_precision"], .5)
+        self.assertEqual(batch["marginal_fraud_mean_amount_usd"], 50)
+        self.assertEqual(batch["marginal_gross_per_alert_usd"], 25)
+        self.assertEqual(batch["marginal_cost_per_alert_usd"], 6)
+        self.assertEqual(batch["added_net_savings_usd"], 38)
+        unchanged = marginal.loc[marginal["added_reviewed_count"] == 0]
+        self.assertTrue(unchanged["marginal_precision"].isna().all())
+        self.assertTrue(unchanged["marginal_fraud_mean_amount_usd"].isna().all())
+        self.assertTrue(unchanged["marginal_gross_per_alert_usd"].isna().all())
+        self.assertTrue(unchanged["marginal_cost_per_alert_usd"].isna().all())
+        self.assertTrue(unchanged["marginal_net_savings_per_day_usd"].eq(0).all())
+        legit = marginal_value(evaluate_capacities(toy_data().assign(isFraud=0, uid_known_fraud=0)))
+        added = legit.loc[legit["added_reviewed_count"] > 0]
+        self.assertTrue(added["marginal_precision"].eq(0).all())
+        self.assertTrue(added["marginal_fraud_mean_amount_usd"].isna().all())
+        self.assertTrue(added["marginal_gross_per_alert_usd"].eq(0).all())
+        self.assertTrue(added["marginal_cost_per_alert_usd"].eq(7).all())
+        self.assertTrue(added["marginal_net_per_alert_usd"].eq(-7).all())
+
+    def test_analyst_table_uses_zero_staff_baseline_and_no_unused_alert_cost(self):
+        table = analyst_table(toy_data())
+        self.assertEqual(len(table), 63)
+        for policy in ("P2", "P3", "P4"):
+            rows = table.loc[table["policy"] == policy].sort_values("analysts")
+            self.assertEqual(rows["analysts"].tolist(), list(range(21)))
+            self.assertEqual(rows["budget_alerts_per_day"].tolist(), [60 * n for n in range(21)])
+            self.assertEqual(rows.iloc[0]["mean_actual_alerts_per_day"], 0)
+            self.assertEqual(rows.iloc[0]["savings_added_by_analyst_usd"], 0)
+            self.assertEqual(rows.iloc[0]["net_savings_usd"], 0 if policy == "P2" else 285)
+            self.assertEqual(rows.iloc[1]["reviewed_count"], 10 if policy == "P2" else 7)
+            self.assertEqual(rows.iloc[1]["net_savings_usd"], 328 if policy == "P2" else 330)
+            self.assertTrue(rows.iloc[2:]["savings_added_by_analyst_usd"].eq(0).all())
+            self.assertEqual(rows.iloc[1]["review_cost_usd"], (10 if policy == "P2" else 7) * 5)
 
 
 if __name__ == "__main__":

@@ -2,16 +2,17 @@
 
 # Fraud alert queue
 
-I simulate blocking and daily fraud reviews to compare net savings in USD.
+I simulate fraud blocks and daily review staffing to compare net savings in USD.
 
-**Within my 0.5%-10% capacity scan, my best policy is P4 at 10.00% daily review capacity: USD 9,155.43/day.** At P3's best scanned capacity of 10.00%, I get **USD 8,481.02/day versus P1's USD 1,966.44/day**, an increment of **USD 6,514.58/day**.
+**With P4 and five analysts, I get USD 8,801.49/day; the sixth adds USD 134.70/day.** I allow 60 alerts/analyst/day, so five analysts have a fixed 300-alert daily budget.
 
-![I compare daily net savings in USD across review capacities](reports/figures/en/stage4_net_savings.png)
+![I compare daily net savings in USD by available analysts](reports/figures/en/stage4_analyst_savings.png)
 
-I choose capacities after observing the same 45 test days. I treat these USD results as a descriptive simulation.
-At 10.00%, I reach the scan's upper endpoint; I have not tested higher capacities.
+At that same five-analyst budget, I get **USD 8,135.26/day with P3 versus USD 1,966.44/day with block-only P1**, an increment of **USD 6,168.82/day**.
+I inspect capacities and staffing after observing the same 45 test days. I treat these USD results as a descriptive simulation.
 
-![I compare blocked and reviewed fraud amounts in USD at 3% review capacity](reports/figures/en/stage4_fraud_stopped.png)
+![I compare added daily net savings in USD at each capacity step](reports/figures/en/stage4_marginal_net_savings.png)
+![I compare daily net savings in USD over the tested review-capacity range](reports/figures/en/stage4_net_savings.png)
 ![I compare client-history models by daily fraud amount caught (USD share)](reports/figures/en/stage3_capacity_curve.png)
 ![I compare the baseline's time and random PR-AUC](reports/figures/en/time_random_pr_auc.png)
 
@@ -19,13 +20,13 @@ I keep Stage 3 Model C at **PR-AUC 0.5864**, **42.92% mean daily fraud amount ca
 
 ## Method
 
-I block only from fraud labels available after 30 days and rank the remaining review queue with fixed LightGBM scores. I assume USD 5.00/review, USD 15.00/false block, complete detection of reviewed fraud, and prevention of its full USD value. Blocks consume no review capacity.
-I keep the 45-day test, 30-day gap, 15-day validation, seed 42, and validation-only early stopping from Stage 3. I fit categories on fitting rows only and perform no hyperparameter tuning.
-I use pooled Stage 4 fraud-amount shares and precisions; Stage 3 uses equal-day means.
+I block only from fraud labels available after 30 days and rank the remaining queue with fixed LightGBM scores. I assume USD 5.00/review, USD 15.00/false block, and USD 2.00/legitimate review in friction. I assume complete detection of reviewed fraud and prevention of its full USD value. Blocks consume no review capacity; review cost includes labour, so I add no separate analyst salary.
+I inspect capacities from 0.5% to 40%, compare only newly added alerts for marginal value, and show separate P3/P4 staffing plans for 1-20 analysts.
+I keep the 45-day test, 30-day gap, 15-day validation, seed 42, and validation-only early stopping. I fit categories on fitting rows only and perform no tuning. Stage 4 pools stopped-fraud USD shares and decision precision; Stage 3 uses equal-day means.
 
 ## Run
 
-I use Python 3.12+ and place `train_transaction.csv` and `train_identity.csv` in `data/raw/`. I run Stage 4 after Stage 3; Stage 4 uses saved scores and fits no models.
+I use Python 3.12+ and place `train_transaction.csv` and `train_identity.csv` in `data/raw/`. I run Stage 4 after Stage 3 from saved scores and fit no models in Stage 4.
 
 ```sh
 cd ~/Projects/fraud-alert-queue

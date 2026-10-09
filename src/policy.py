@@ -1,22 +1,28 @@
-from numbers import Real
+from numbers import Integral, Real
 
 import numpy as np
 import pandas as pd
 
-# I assume these USD costs for analyst time and false blocks.
+# I assume these USD costs for analyst time, false blocks, and review friction.
 REVIEW_COST_USD = 5
 FALSE_BLOCK_COST_USD = 15
+REVIEW_FRICTION_USD = 2
 CAPACITY_SHARE = .03
-CAPACITY_SHARES = tuple(i / 200 for i in range(1, 21))
+CAPACITY_SHARES = tuple(i / 200 for i in range(1, 21)) + tuple(i / 100 for i in range(11, 41))
 REVIEW_COSTS_USD = (2, 5, 10)
 FALSE_BLOCK_COSTS_USD = (5, 15, 50)
+REVIEW_FRICTIONS_USD = (0, 2, 5)
+# I assume an analyst can review 60 alerts per day.
+ALERTS_PER_ANALYST_PER_DAY = 60
+ANALYST_COUNTS = tuple(range(1, 21))
 POLICIES = ("P1", "P2", "P3", "P4")
 DAILY_COLUMNS = (
     "day", "transaction_count", "blocked_count", "reviewed_count", "approved_count",
-    "blocked_fraud_count", "reviewed_fraud_count", "false_block_count",
+    "blocked_fraud_count", "reviewed_fraud_count", "reviewed_legit_count", "false_block_count",
     "total_fraud_amount_usd", "blocked_fraud_amount_usd", "reviewed_fraud_amount_usd",
     "fraud_amount_stopped_usd", "fraud_amount_stopped_share", "block_precision",
-    "review_precision", "review_cost_usd", "false_block_cost_usd", "net_savings_usd",
+    "review_precision", "review_cost_usd", "false_block_cost_usd", "review_friction_cost_usd",
+    "net_savings_usd", "analysts_needed",
 )
 
 
@@ -43,10 +49,13 @@ def _numeric(df, col):
     return values
 
 
-def apply_policy(df, policy, capacity_share=CAPACITY_SHARE):
+def apply_policy(df, policy, capacity_share=CAPACITY_SHARE, review_capacity=None):
     if policy not in POLICIES:
         raise ValueError(f"I need a policy from {POLICIES}.")
     _check_number(capacity_share, "capacity_share", maximum=1)
+    if review_capacity is not None:
+        if isinstance(review_capacity, bool) or not isinstance(review_capacity, Integral) or review_capacity < 0:
+            raise ValueError("I need a nonnegative integer for review_capacity.")
     _check_columns(df, ("day", "TransactionID"))
     days = _numeric(df, "day")
     _numeric(df, "TransactionID")
@@ -67,10 +76,14 @@ def apply_policy(df, policy, capacity_share=CAPACITY_SHARE):
         score_col = "score_B" if policy == "P3" else "score_C"
         _check_columns(df, (score_col,))
         scores = _numeric(df, score_col)
-        if capacity_share > 0 and len(df):
+        if len(df) and ((review_capacity is None and capacity_share > 0) or
+                        (review_capacity is not None and review_capacity > 0)):
             counts = pd.Series(days).value_counts(sort=False)
-            # I round exact percentage budgets without adding a review from float noise.
-            budgets = np.ceil(np.nextafter(capacity_share * counts, -np.inf)).astype(int)
+            if review_capacity is None:
+                # I round exact percentage budgets without adding a review from float noise.
+                budgets = np.ceil(np.nextafter(capacity_share * counts, -np.inf)).astype(int)
+            else:
+                budgets = pd.Series(review_capacity, index=counts.index)
             eligible = pd.DataFrame({
                 "day": days[~blocked], "score": scores[~blocked],
                 "TransactionID": ids[~blocked], "position": np.flatnonzero(~blocked),
@@ -91,16 +104,18 @@ def _ratio(numerator, denominator):
 
 def evaluate_policy(df, policy, capacity_share=CAPACITY_SHARE,
                     review_cost_usd=REVIEW_COST_USD,
-                    false_block_cost_usd=FALSE_BLOCK_COST_USD):
+                    false_block_cost_usd=FALSE_BLOCK_COST_USD,
+                    review_friction_usd=REVIEW_FRICTION_USD, review_capacity=None):
     _check_number(review_cost_usd, "review_cost_usd")
     _check_number(false_block_cost_usd, "false_block_cost_usd")
+    _check_number(review_friction_usd, "review_friction_usd")
     _check_columns(df, ("isFraud", "TransactionAmt"))
     amounts = _numeric(df, "TransactionAmt")
     if (amounts < 0).any():
         raise ValueError("I need nonnegative values for TransactionAmt.")
     if not df["isFraud"].isin([0, 1]).all():
         raise ValueError("I need isFraud to contain only 0 and 1.")
-    out = apply_policy(df, policy, capacity_share)
+    out = apply_policy(df, policy, capacity_share, review_capacity)
     fraud = df["isFraud"].to_numpy(dtype=np.int8) == 1
     blocked = out["decision"].to_numpy() == "block"
     reviewed = out["decision"].to_numpy() == "review"
@@ -112,6 +127,7 @@ def evaluate_policy(df, policy, capacity_share=CAPACITY_SHARE,
         "approved_count": (~blocked & ~reviewed).astype(np.int64),
         "blocked_fraud_count": (blocked & fraud).astype(np.int64),
         "reviewed_fraud_count": (reviewed & fraud).astype(np.int64),
+        "reviewed_legit_count": (reviewed & ~fraud).astype(np.int64),
         "false_block_count": (blocked & ~fraud).astype(np.int64),
         "total_fraud_amount_usd": amounts * fraud,
         "blocked_fraud_amount_usd": amounts * blocked * fraud,
@@ -127,15 +143,20 @@ def evaluate_policy(df, policy, capacity_share=CAPACITY_SHARE,
     daily["review_precision"] = daily["reviewed_fraud_count"] / daily["reviewed_count"].replace(0, np.nan)
     daily["review_cost_usd"] = daily["reviewed_count"] * review_cost_usd
     daily["false_block_cost_usd"] = daily["false_block_count"] * false_block_cost_usd
+    daily["review_friction_cost_usd"] = daily["reviewed_legit_count"] * review_friction_usd
     daily["net_savings_usd"] = (
-        daily["fraud_amount_stopped_usd"] - daily["review_cost_usd"] - daily["false_block_cost_usd"]
+        daily["fraud_amount_stopped_usd"] - daily["review_cost_usd"]
+        - daily["false_block_cost_usd"] - daily["review_friction_cost_usd"]
     )
+    daily["analysts_needed"] = np.ceil(daily["reviewed_count"] / ALERTS_PER_ANALYST_PER_DAY).astype(int)
     daily = daily.loc[:, DAILY_COLUMNS]
     totals = daily.sum(numeric_only=True)
     n_days = len(daily)
     metrics = {
         "n_days": n_days,
-        "capacity_share": 0.0 if policy == "P1" else float(capacity_share),
+        "capacity_share": 0.0 if policy == "P1" else float(capacity_share) if review_capacity is None else np.nan,
+        "review_capacity": review_capacity,
+        "budget_kind": "none" if policy == "P1" else "share" if review_capacity is None else "absolute",
         "fraud_amount_stopped_usd": float(totals["fraud_amount_stopped_usd"]),
         "fraud_amount_stopped_share": _ratio(totals["fraud_amount_stopped_usd"], totals["total_fraud_amount_usd"]),
         "block_precision": _ratio(totals["blocked_fraud_count"], totals["blocked_count"]),
@@ -149,15 +170,24 @@ def evaluate_policy(df, policy, capacity_share=CAPACITY_SHARE,
         "total_fraud_amount_usd": float(totals["total_fraud_amount_usd"]),
         "review_unit_cost_usd": float(review_cost_usd),
         "false_block_unit_cost_usd": float(false_block_cost_usd),
+        "review_friction_unit_cost_usd": float(review_friction_usd),
+        "mean_daily_volume_share": float((daily["reviewed_count"] / daily["transaction_count"]).mean()),
+        "pooled_capacity_share": _ratio(totals["reviewed_count"], totals["transaction_count"]),
+        "mean_daily_analysts": _ratio(totals["analysts_needed"], n_days),
+        "min_daily_analysts": int(daily["analysts_needed"].min()) if n_days else 0,
+        "max_daily_analysts": int(daily["analysts_needed"].max()) if n_days else 0,
+        "days_at_max_daily_analysts": int(daily["analysts_needed"].eq(daily["analysts_needed"].max()).sum()) if n_days else 0,
+        "review_full_time_equivalent": _ratio(totals["reviewed_count"], n_days * ALERTS_PER_ANALYST_PER_DAY),
     }
     for col in ("transaction_count", "blocked_count", "reviewed_count", "approved_count",
-                "blocked_fraud_count", "reviewed_fraud_count", "false_block_count"):
+                "blocked_fraud_count", "reviewed_fraud_count", "reviewed_legit_count", "false_block_count"):
         metrics[col] = int(totals[col])
     for col in ("blocked_fraud_amount_usd", "reviewed_fraud_amount_usd", "review_cost_usd",
-                "false_block_cost_usd", "net_savings_usd"):
+                "false_block_cost_usd", "review_friction_cost_usd", "net_savings_usd"):
         metrics[col] = float(totals[col])
     metrics["review_cost_per_day_usd"] = _ratio(totals["review_cost_usd"], n_days)
     metrics["false_block_cost_per_day_usd"] = _ratio(totals["false_block_cost_usd"], n_days)
+    metrics["review_friction_cost_per_day_usd"] = _ratio(totals["review_friction_cost_usd"], n_days)
     return {"metrics": metrics, "daily_metrics": daily, "decisions": out}
 
 
@@ -186,25 +216,98 @@ def best_capacity(curve, policy=None):
 def sensitivity_table(curve):
     _check_columns(curve, (
         "policy", "capacity_share", "n_days", "fraud_amount_stopped_usd",
-        "reviewed_count", "false_block_count",
+        "reviewed_count", "reviewed_legit_count", "false_block_count",
     ))
     rows = []
     for review_cost in REVIEW_COSTS_USD:
         for false_block_cost in FALSE_BLOCK_COSTS_USD:
-            costs = curve.copy(deep=False)
-            costs["review_cost_usd"] = costs["reviewed_count"] * review_cost
-            costs["false_block_cost_usd"] = costs["false_block_count"] * false_block_cost
-            costs["net_savings_usd"] = (
-                costs["fraud_amount_stopped_usd"] - costs["review_cost_usd"] - costs["false_block_cost_usd"]
-            )
-            days = costs["n_days"].replace(0, np.nan)
-            costs["net_savings_per_day_usd"] = costs["net_savings_usd"] / days
-            costs["review_cost_per_day_usd"] = costs["review_cost_usd"] / days
-            costs["false_block_cost_per_day_usd"] = costs["false_block_cost_usd"] / days
-            costs["review_unit_cost_usd"] = review_cost
-            costs["false_block_unit_cost_usd"] = false_block_cost
-            selected = best_capacity(costs)
-            selected["selected_review_cost_usd"] = selected.pop("review_cost_usd")
-            selected["selected_false_block_cost_usd"] = selected.pop("false_block_cost_usd")
-            rows.append({"review_cost_usd": review_cost, "false_block_cost_usd": false_block_cost, **selected})
+            for friction in REVIEW_FRICTIONS_USD:
+                costs = curve.copy(deep=False)
+                costs["review_cost_usd"] = costs["reviewed_count"] * review_cost
+                costs["false_block_cost_usd"] = costs["false_block_count"] * false_block_cost
+                costs["review_friction_cost_usd"] = costs["reviewed_legit_count"] * friction
+                costs["net_savings_usd"] = (
+                    costs["fraud_amount_stopped_usd"] - costs["review_cost_usd"]
+                    - costs["false_block_cost_usd"] - costs["review_friction_cost_usd"]
+                )
+                days = costs["n_days"].replace(0, np.nan)
+                costs["net_savings_per_day_usd"] = costs["net_savings_usd"] / days
+                costs["review_cost_per_day_usd"] = costs["review_cost_usd"] / days
+                costs["false_block_cost_per_day_usd"] = costs["false_block_cost_usd"] / days
+                costs["review_friction_cost_per_day_usd"] = costs["review_friction_cost_usd"] / days
+                costs["review_unit_cost_usd"] = review_cost
+                costs["false_block_unit_cost_usd"] = false_block_cost
+                costs["review_friction_unit_cost_usd"] = friction
+                selected = best_capacity(costs)
+                selected["selected_review_cost_usd"] = selected.pop("review_cost_usd")
+                selected["selected_false_block_cost_usd"] = selected.pop("false_block_cost_usd")
+                selected["selected_review_friction_cost_usd"] = selected.pop("review_friction_cost_usd")
+                rows.append({"review_cost_usd": review_cost, "false_block_cost_usd": false_block_cost,
+                             "review_friction_usd": friction, **selected})
+    return pd.DataFrame(rows)
+
+
+def marginal_value(curve):
+    _check_columns(curve, (
+        "policy", "capacity_share", "n_days", "reviewed_count", "reviewed_fraud_count",
+        "reviewed_legit_count", "reviewed_fraud_amount_usd", "net_savings_usd",
+        "review_unit_cost_usd", "review_friction_unit_cost_usd",
+    ))
+    blocked = curve.loc[curve["policy"] == "P1"]
+    if blocked.empty:
+        raise ValueError("I need P1 as the zero-review reference for block policies.")
+    rows = []
+    for policy in POLICIES[1:]:
+        values = curve.loc[curve["policy"] == policy].sort_values("capacity_share").reset_index(drop=True)
+        previous_net = 0.0 if policy == "P2" else float(blocked.iloc[0]["net_savings_usd"])
+        previous_count = previous_frauds = previous_legit = 0
+        previous_amount = previous_share = 0.0
+        for _, row in values.iterrows():
+            added = int(row["reviewed_count"]) - previous_count
+            frauds = int(row["reviewed_fraud_count"]) - previous_frauds
+            legit = int(row["reviewed_legit_count"]) - previous_legit
+            amount = float(row["reviewed_fraud_amount_usd"]) - previous_amount
+            net = float(row["net_savings_usd"]) - previous_net
+            precision = _ratio(frauds, added)
+            gross = _ratio(amount, added)
+            cost = row["review_unit_cost_usd"] + row["review_friction_unit_cost_usd"] * (1 - precision)
+            rows.append({
+                "policy": policy, "capacity_share": float(row["capacity_share"]),
+                "previous_capacity_share": previous_share,
+                "added_alerts_per_day": _ratio(added, row["n_days"]),
+                "added_frauds_per_day": _ratio(frauds, row["n_days"]),
+                "marginal_precision": precision,
+                "marginal_fraud_mean_amount_usd": _ratio(amount, frauds),
+                "marginal_gross_per_alert_usd": gross,
+                "marginal_cost_per_alert_usd": float(cost),
+                "marginal_net_per_alert_usd": float(gross - cost),
+                "marginal_net_savings_per_day_usd": _ratio(net, row["n_days"]),
+                "added_reviewed_count": added, "added_reviewed_fraud_count": frauds,
+                "added_reviewed_legit_count": legit, "added_reviewed_fraud_amount_usd": amount,
+                "added_net_savings_usd": net,
+            })
+            previous_net = float(row["net_savings_usd"])
+            previous_count = int(row["reviewed_count"])
+            previous_frauds = int(row["reviewed_fraud_count"])
+            previous_legit = int(row["reviewed_legit_count"])
+            previous_amount = float(row["reviewed_fraud_amount_usd"])
+            previous_share = float(row["capacity_share"])
+    return pd.DataFrame(rows)
+
+
+def analyst_table(df):
+    rows = []
+    for policy in POLICIES[1:]:
+        previous_net = None
+        for analysts in (0, *ANALYST_COUNTS):
+            budget = analysts * ALERTS_PER_ANALYST_PER_DAY
+            metrics = evaluate_policy(df, policy, review_capacity=budget)["metrics"]
+            net = metrics["net_savings_per_day_usd"]
+            rows.append({
+                "policy": policy, "analysts": analysts, "budget_alerts_per_day": budget,
+                "mean_actual_alerts_per_day": metrics["reviewed_per_day"],
+                "savings_added_by_analyst_usd": 0.0 if previous_net is None else net - previous_net,
+                **metrics,
+            })
+            previous_net = net
     return pd.DataFrame(rows)
