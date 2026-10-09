@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .evaluate import evaluate_predictions, plot_figures
+from .evaluate import K_SHARE, evaluate_predictions, evaluate_share_predictions, plot_figures
 from .load import PROJECT_ROOT, load_data
 from .split import random_split, time_split
 from .train import EARLY_STOPPING_ROUNDS, MAX_ESTIMATORS, RANDOM_SEED
@@ -33,16 +33,27 @@ def metrics_table(results, language="en"):
         labels = ["PR-AUC (trapezi)", "Precisione media (AP)", "ROC-AUC"]
         header = "| Metrica | Divisione temporale | Divisione casuale |"
     rows = list(zip(labels, ("pr_auc", "average_precision", "roc_auc"), (False,) * 3))
-    for k in KS:
-        label = f"Fraud amount caught @{k}" if language == "en" else f"Importo intercettato @{k}"
-        precision = f"Precision@{k}" if language == "en" else f"Precisione@{k}"
-        rows.extend([(label, f"fraud_amount_caught@{k}", True),
-                     (precision, f"precision@{k}", True)])
+    for share in K_SHARE:
+        label = f"Fraud amount caught @{share:.0%}" if language == "en" else f"Importo intercettato @{share:.0%}"
+        precision = f"Precision@{share:.0%}" if language == "en" else f"Precisione@{share:.0%}"
+        rows.extend([(label, f"fraud_amount_caught@{share:.0%}", True),
+                     (precision, f"precision@{share:.0%}", True)])
     table = [header, "| --- | ---: | ---: |"]
     for label, key, percentage in rows:
         cells = [format_number(results[name]["metrics"][key], language, percentage)
                  for name in ("time", "random")]
         table.append(f"| {label} | {cells[0]} | {cells[1]} |")
+    return "\n".join(table)
+
+
+def absolute_table(result, language):
+    title = "Absolute capacity on the time split" if language == "en" else "Capacità assoluta sulla divisione temporale"
+    header = "| K (transactions/day) | Fraud amount caught | Precision |" if language == "en" else "| K (transazioni/giorno) | Importo intercettato | Precisione |"
+    table = ["## " + title, "", header, "| ---: | ---: | ---: |"]
+    for k in KS:
+        amount = format_number(result["metrics"][f"fraud_amount_caught@{k}"], language, True)
+        precision = format_number(result["metrics"][f"precision@{k}"], language, True)
+        table.append(f"| {k} | {amount} | {precision} |")
     return "\n".join(table)
 
 
@@ -72,9 +83,10 @@ def coverage_table(summaries, language):
     return "\n".join(table)
 
 
-def report_text(results, summaries, row_count, feature_count, language):
+def report_text(results, summaries, row_count, feature_count, language, absolute=None):
     table = metrics_table(results, language)
     coverage = coverage_table(summaries, language)
+    absolute_text = absolute_table(absolute, language) if absolute is not None else ""
     time_pr = results["time"]["metrics"]["pr_auc"]
     random_pr = results["random"]["metrics"]["pr_auc"]
     comparison = "I have no defined PR-AUC comparison."
@@ -126,7 +138,7 @@ I show row counts and inclusive relative day ranges. I calculate `day = Transact
 - I compare a seeded, target-stratified 80/20 random split. I use the last 15 days of its 80% development pool for validation and apply no delay gap.
 - I use {feature_count} raw features. I exclude `isFraud`, `TransactionID`, and `day`; I retain `TransactionDT`. I fit categories on fitting rows only and treat unknown categories as missing. I add no features and perform no tuning.
 - I use LightGBM defaults, seed {RANDOM_SEED}, and at most {MAX_ESTIMATORS} iterations. I stop after {EARLY_STOPPING_ROUNDS} rounds without improvement in validation AP. I never fit on test rows or use them for early stopping.
-- I rank each test day by score, with ascending `TransactionID` for ties. I review `min(K, daily rows)` transactions.
+- I rank each test day by score, with ascending `TransactionID` for ties. I review `ceil(share * daily test rows)` transactions for each share. I use absolute K only on the time split.
 - I divide captured fraud amount by all fraud amount that day, then average daily ratios equally. I exclude zero-fraud-amount days from this mean and keep `TransactionAmt` in float64.
 - I divide selected frauds by selected transactions for precision, then average over all observed test days. I exclude days without test transactions.
 - I calculate trapezoidal PR-AUC, AP, and ROC-AUC over the full test partition. I report AP separately from PR-AUC.
@@ -134,10 +146,12 @@ I show row counts and inclusive relative day ranges. I calculate `day = Transact
 ## Comparison
 
 {comparison} I train on later transactions than some random test rows, share days across partitions, and omit the label-delay gap.
-I also compare different queues: random test contains about 20% of each day's transactions; time test contains all transactions in its 45-day period.
-I review a larger fraction of the random queue at the same K. I cannot attribute the difference solely to temporal leakage.
+I compare the same share of each daily test queue. I round the review count up to an integer.
+I still compare different periods and training sizes, so I cannot attribute the difference solely to temporal leakage.
 
-I evaluate K from 10 to 1000 in steps of 10 and save daily metrics and curve values in the adjacent CSVs.
+{absolute_text}
+
+I save daily share metrics and curve values in the adjacent CSVs. I keep absolute-capacity CSVs only for the time split.
 I use data from the Kaggle IEEE-CIS Fraud Detection competition; I do not include the data in this repo.
 I use these package versions: {runtime}.
 """
@@ -166,7 +180,7 @@ Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calco
 - Confronto una divisione casuale 80/20, stratificata per il target e con seme fisso. Riservo alla validazione gli ultimi 15 giorni dell'80% dei dati riservato allo sviluppo. In questo confronto non applico l'intervallo per il ritardo delle etichette.
 - Uso {feature_count} variabili originali. Escludo `isFraud`, `TransactionID` e `day`; mantengo `TransactionDT`. Imparo le categorie solo dall'addestramento e tratto quelle sconosciute come mancanti. Non creo nuove variabili e non ottimizzo gli iperparametri.
 - Uso i parametri predefiniti di LightGBM, seme {RANDOM_SEED} e un massimo di {MAX_ESTIMATORS} iterazioni. Mi fermo dopo {EARLY_STOPPING_ROUNDS} iterazioni senza miglioramenti nell'AP di validazione. Non uso il test per l'addestramento o l'arresto anticipato.
-- Ordino le transazioni di ogni giorno per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `min(K, righe giornaliere)` transazioni.
+- Ordino le transazioni di ogni giorno per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `ceil(quota * righe di test giornaliere)` transazioni. Uso K assoluto solo per la divisione temporale.
 - Divido l'importo fraudolento intercettato per l'intero importo fraudolento del giorno e calcolo la media dei rapporti con pesi uguali. Escludo i giorni con importo fraudolento nullo e mantengo `TransactionAmt` in float64.
 - Per la precisione divido le frodi selezionate per le transazioni controllate e calcolo la media su tutti i giorni osservati. Escludo i giorni senza transazioni di test.
 - Calcolo PR-AUC a trapezi, AP e ROC-AUC sull'intero insieme di test. Riporto l'AP separatamente dal PR-AUC.
@@ -174,10 +188,12 @@ Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calco
 ## Confronto
 
 {comparison_it} Addestro il modello su transazioni successive ad alcune righe di test, condivido giorni fra le partizioni e non applico il ritardo delle etichette.
-Confronto anche code diverse: il test casuale contiene circa il 20% delle transazioni di ogni giorno; quello temporale contiene tutte le transazioni dei suoi 45 giorni.
-A parità di K controllo una quota maggiore della coda casuale. Non attribuisco la differenza soltanto all'uso di informazioni future.
+Confronto la stessa quota di ogni coda giornaliera di test e arrotondo il numero dei controlli per eccesso.
+Confronto comunque periodi e dimensioni di addestramento diversi; non attribuisco la differenza soltanto all'uso di informazioni future.
 
-Valuto K da 10 a 1000, con incrementi di 10, e salvo le metriche giornaliere e le curve nei CSV accanto al rapporto.
+{absolute_text}
+
+Salvo le metriche giornaliere per quota e le curve nei CSV accanto al rapporto. Mantengo i CSV con capacità assoluta solo per la divisione temporale.
 Uso i dati della competizione Kaggle IEEE-CIS Fraud Detection; non includo i dati nel repository.
 Uso queste versioni dei pacchetti: {runtime}.
 """
@@ -188,8 +204,8 @@ def readme_text(results, language):
     random = results["random"]["metrics"]
     time_pr = format_number(time["pr_auc"], language)
     random_pr = format_number(random["pr_auc"], language)
-    amount = format_number(time["fraud_amount_caught@100"], language, True)
-    precision = format_number(time["precision@100"], language, True)
+    amount = format_number(time["fraud_amount_caught@3%"], language, True)
+    precision = format_number(time["precision@3%"], language, True)
     links = "[English](README.md) | [Italiano](README.it.md)"
     run = """```sh
 cd ~/Projects/fraud-alert-queue
@@ -206,7 +222,7 @@ python -m unittest discover -s tests -v
 
 I rank transactions for a daily fraud review queue with a fixed LightGBM model.
 
-**PR-AUC: {time_pr} time, {random_pr} random.** At 100 reviews/day, I catch **{amount}** of daily fraud amount with **{precision} precision** on the time test.
+**PR-AUC: {time_pr} time, {random_pr} random.** At 3% of each day's test volume, I catch **{amount}** of daily fraud amount with **{precision} precision** on the time test.
 
 ![I measure fraud amount caught at each daily capacity](reports/figures/en/capacity_curve.png)
 ![I compare precision at each daily capacity](reports/figures/en/precision_curve.png)
@@ -218,7 +234,7 @@ I reserve 45 days for test, drop the preceding 30 days for delayed chargeback la
 I use raw features, train-only categories, seed 42, and validation-only early stopping. I add no features and perform no tuning.
 
 I compare a stratified random 80/20 split, with validation inside the 80% development pool.
-I evaluate about 20% of each day's transactions in the random test queue. At the same K, I review a larger fraction of that queue; I cannot attribute the difference solely to temporal leakage.
+I use the same share of daily test volume for both splits and round the number of reviews up. I compare different periods and training sizes, so I cannot attribute the difference solely to temporal leakage.
 
 ## Run
 
@@ -239,7 +255,7 @@ I use data from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.ka
 
 Io ordino le transazioni per una coda giornaliera di controlli antifrode con un modello LightGBM a parametri fissi.
 
-**PR-AUC: {time_pr} temporale, {random_pr} casuale.** Con 100 controlli al giorno intercetto il **{amount}** degli importi fraudolenti giornalieri, con una **precisione del {precision}** sul test temporale.
+**PR-AUC: {time_pr} temporale, {random_pr} casuale.** Controllando il 3% delle transazioni di test di ogni giorno intercetto il **{amount}** degli importi fraudolenti giornalieri, con una **precisione del {precision}** sul test temporale.
 
 ![Misuro gli importi intercettati per ogni capacità giornaliera](reports/figures/it/capacity_curve.png)
 ![Confronto la precisione per ogni capacità giornaliera](reports/figures/it/precision_curve.png)
@@ -251,7 +267,7 @@ Riservo 45 giorni al test, escludo i 30 giorni precedenti per il ritardo dei cha
 Uso le variabili originali, imparo le categorie solo dall'addestramento e fisso il seme a 42. Per l'arresto anticipato uso solo la validazione. Non creo nuove variabili e non ottimizzo gli iperparametri.
 
 Confronto una divisione casuale 80/20 stratificata, con la validazione ricavata dall'80% dei dati riservato allo sviluppo.
-Nel test casuale valuto circa il 20% delle transazioni di ogni giorno. A parità di K controllo una quota maggiore di questa coda; non attribuisco la differenza soltanto all'uso di informazioni future.
+Uso la stessa quota del volume giornaliero di test per entrambe le divisioni, arrotondando i controlli per eccesso. Confronto periodi e dimensioni di addestramento diversi; non attribuisco la differenza soltanto all'uso di informazioni future.
 
 ## Esecuzione
 
@@ -278,6 +294,7 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
     results = {}
     summaries = []
     feature_count = 0
+    absolute = None
     reports_dir.mkdir(parents=True, exist_ok=True)
     for split_function in (time_split, random_split):
         split = split_function(df)
@@ -287,7 +304,11 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
               f"gap rows, and {len(split['test']):,} test rows.", flush=True)
         fit = train_baseline(split["train"], split["validation"], n_jobs=n_jobs)
         scores = predict_scores(fit, split["test"])
-        result = evaluate_predictions(split["test"], scores)
+        result = evaluate_share_predictions(split["test"], scores)
+        if name == "time":
+            absolute = evaluate_predictions(split["test"], scores)
+            absolute["daily_metrics"].to_csv(reports_dir / "time_absolute_daily_metrics.csv", index=False)
+            absolute["capacity_curve"].to_csv(reports_dir / "time_absolute_capacity_curve.csv", index=False)
         results[name] = result
         best_iteration = int(fit["model"].best_iteration_)
         summaries.append(split_summary(split, best_iteration))
@@ -303,9 +324,10 @@ def run_baseline(project_root=PROJECT_ROOT, raw_dir=None, n_jobs=4):
         old_figure.unlink()
     for language in LANGUAGES:
         suffix = "" if language == "en" else ".it"
-        text = report_text(results, summaries, len(df), feature_count, language)
+        text = report_text(results, summaries, len(df), feature_count, language, absolute)
         (reports_dir / f"baseline_metrics{suffix}.md").write_text(text, encoding="utf-8")
-        (project_root / f"README{suffix}.md").write_text(readme_text(results, language), encoding="utf-8")
+        if not (reports_dir / "stage3_metrics.md").is_file():
+            (project_root / f"README{suffix}.md").write_text(readme_text(results, language), encoding="utf-8")
     table = metrics_table(results)
     print("\n" + table, flush=True)
     print(f"\nI saved the reports in {reports_dir}.", flush=True)

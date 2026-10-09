@@ -2,25 +2,26 @@
 
 # Fraud alert queue
 
-I rank transactions for a daily fraud review queue with a fixed LightGBM model.
+I rank transactions for a daily fraud review queue with fixed LightGBM models.
 
-**PR-AUC: 0.4654 time, 0.7691 random.** At 100 reviews/day, I catch **35.64%** of daily fraud amount with **44.38% precision** on the time test.
+**Model C PR-AUC: 0.5864 (+26.0% relative to A).** At a 3% daily review share, I catch **42.92%** of daily fraud amount with **59.87% precision**.
 
-![I measure fraud amount caught at each daily capacity](reports/figures/en/capacity_curve.png)
-![I compare precision at each daily capacity](reports/figures/en/precision_curve.png)
-![I compare test ranking scores](reports/figures/en/ranking_metrics.png)
+![I compare daily fraud amount caught across review shares](reports/figures/en/stage3_capacity_curve.png)
+![I compare fraud amount caught at a 3% review share](reports/figures/en/stage3_caught_at_3pct.png)
+![I compare new and returning clients at a 3% review share](reports/figures/en/stage3_segments.png)
+![I compare the raw baseline's time and random PR-AUC](reports/figures/en/time_random_pr_auc.png)
+
+For Stage 2, I get **PR-AUC 0.4654 time and 0.7691 random**. At the same 3% review share, I catch **32.52% time and 61.37% random**.
 
 ## Method
 
-I reserve 45 days for test, drop the preceding 30 days for delayed chargeback labels, and use the preceding 15 days for validation. I fit on earlier rows.
-I use raw features, train-only categories, seed 42, and validation-only early stopping. I add no features and perform no tuning.
-
-I compare a stratified random 80/20 split, with validation inside the 80% development pool.
-I evaluate about 20% of each day's transactions in the random test queue. At the same K, I review a larger fraction of that queue; I cannot attribute the difference solely to temporal leakage.
+I compare A with raw features, B with six prior client-history features, and C with B plus fraud labels available after 30 days. I keep histories strictly earlier in time and group timestamp ties. I treat missing UIDs as new clients.
+I use 45 test days, a 30-day gap, 15 validation days, seed 42, and validation-only early stopping. I fit categories on fitting rows only and perform no tuning.
+I review the same daily share across comparisons. I compare new and returning clients as separate queues; their budgets are independent.
 
 ## Run
 
-I use Python 3.12+ and put `train_transaction.csv` and `train_identity.csv` in `data/raw/`.
+I use Python 3.12+ and place `train_transaction.csv` and `train_identity.csv` in `data/raw/`.
 
 ```sh
 cd ~/Projects/fraud-alert-queue
@@ -28,11 +29,12 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m src.run_baseline
+python -m src.run_stage3
 python -m unittest discover -s tests -v
 ```
 
 On macOS, I install `libomp` with Homebrew if LightGBM needs it.
-I rebuild `data/processed/train.parquet` on each run and save [English results](reports/baseline_metrics.md), [Italian results](reports/baseline_metrics.it.md), daily CSVs, and figures.
+I save [Stage 2 results](reports/baseline_metrics.md), [Stage 3 results](reports/stage3_metrics.md), feature parquet, test scores, and daily CSVs locally.
 
 ## Data
 

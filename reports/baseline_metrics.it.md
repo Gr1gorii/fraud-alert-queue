@@ -7,14 +7,14 @@ Io confronto due divisioni dei dati per una coda giornaliera di controlli antifr
 | PR-AUC (trapezi) | 0,4654 | 0,7691 |
 | Precisione media (AP) | 0,4654 | 0,7691 |
 | ROC-AUC | 0,8754 | 0,9514 |
-| Importo intercettato @50 | 23,09% | 81,97% |
-| Precisione@50 | 64,04% | 37,21% |
-| Importo intercettato @100 | 35,64% | 88,21% |
-| Precisione@100 | 44,38% | 20,03% |
-| Importo intercettato @200 | 50,61% | 93,05% |
-| Precisione@200 | 28,30% | 10,67% |
-| Importo intercettato @500 | 69,74% | 99,58% |
-| Precisione@500 | 14,48% | 4,56% |
+| Importo intercettato @1% | 14,96% | 26,91% |
+| Precisione@1% | 77,59% | 94,99% |
+| Importo intercettato @2% | 24,40% | 47,28% |
+| Precisione@2% | 60,67% | 86,22% |
+| Importo intercettato @3% | 32,52% | 61,37% |
+| Precisione@3% | 49,22% | 74,68% |
+| Importo intercettato @5% | 41,73% | 74,30% |
+| Precisione@5% | 35,59% | 53,68% |
 
 ![Misuro gli importi fraudolenti intercettati](figures/it/capacity_curve.png)
 ![Misuro la precisione giornaliera](figures/it/precision_curve.png)
@@ -38,7 +38,7 @@ Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calco
 - Confronto una divisione casuale 80/20, stratificata per il target e con seme fisso. Riservo alla validazione gli ultimi 15 giorni dell'80% dei dati riservato allo sviluppo. In questo confronto non applico l'intervallo per il ritardo delle etichette.
 - Uso 432 variabili originali. Escludo `isFraud`, `TransactionID` e `day`; mantengo `TransactionDT`. Imparo le categorie solo dall'addestramento e tratto quelle sconosciute come mancanti. Non creo nuove variabili e non ottimizzo gli iperparametri.
 - Uso i parametri predefiniti di LightGBM, seme 42 e un massimo di 1000 iterazioni. Mi fermo dopo 50 iterazioni senza miglioramenti nell'AP di validazione. Non uso il test per l'addestramento o l'arresto anticipato.
-- Ordino le transazioni di ogni giorno per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `min(K, righe giornaliere)` transazioni.
+- Ordino le transazioni di ogni giorno per punteggio; a parità di punteggio uso `TransactionID` crescente. Controllo `ceil(quota * righe di test giornaliere)` transazioni. Uso K assoluto solo per la divisione temporale.
 - Divido l'importo fraudolento intercettato per l'intero importo fraudolento del giorno e calcolo la media dei rapporti con pesi uguali. Escludo i giorni con importo fraudolento nullo e mantengo `TransactionAmt` in float64.
 - Per la precisione divido le frodi selezionate per le transazioni controllate e calcolo la media su tutti i giorni osservati. Escludo i giorni senza transazioni di test.
 - Calcolo PR-AUC a trapezi, AP e ROC-AUC sull'intero insieme di test. Riporto l'AP separatamente dal PR-AUC.
@@ -46,9 +46,18 @@ Riporto il numero di righe e gli intervalli inclusivi dei giorni relativi. Calco
 ## Confronto
 
 Ottengo un PR-AUC più alto del 65,3% con la divisione casuale. Addestro il modello su transazioni successive ad alcune righe di test, condivido giorni fra le partizioni e non applico il ritardo delle etichette.
-Confronto anche code diverse: il test casuale contiene circa il 20% delle transazioni di ogni giorno; quello temporale contiene tutte le transazioni dei suoi 45 giorni.
-A parità di K controllo una quota maggiore della coda casuale. Non attribuisco la differenza soltanto all'uso di informazioni future.
+Confronto la stessa quota di ogni coda giornaliera di test e arrotondo il numero dei controlli per eccesso.
+Confronto comunque periodi e dimensioni di addestramento diversi; non attribuisco la differenza soltanto all'uso di informazioni future.
 
-Valuto K da 10 a 1000, con incrementi di 10, e salvo le metriche giornaliere e le curve nei CSV accanto al rapporto.
+## Capacità assoluta sulla divisione temporale
+
+| K (transazioni/giorno) | Importo intercettato | Precisione |
+| ---: | ---: | ---: |
+| 50 | 23,09% | 64,04% |
+| 100 | 35,64% | 44,38% |
+| 200 | 50,61% | 28,30% |
+| 500 | 69,74% | 14,48% |
+
+Salvo le metriche giornaliere per quota e le curve nei CSV accanto al rapporto. Mantengo i CSV con capacità assoluta solo per la divisione temporale.
 Uso i dati della competizione Kaggle IEEE-CIS Fraud Detection; non includo i dati nel repository.
 Uso queste versioni dei pacchetti: numpy 2.5.3, pandas 2.3.3, pyarrow 24.0.0, scikit-learn 1.9.1, lightgbm 4.7.0, matplotlib 3.11.2.
