@@ -89,3 +89,7 @@ Le spiegazioni coprono l'unione delle code del modello con una quota del 20% di 
 ## Dati
 
 I dati provengono dalla [competizione Kaggle IEEE-CIS Fraud Detection](https://www.kaggle.com/competitions/ieee-fraud-detection/data) e non sono inclusi nel repository. I valori esatti restano nel [rapporto del modello di base](reports/baseline_metrics.it.md), nel [rapporto sullo storico del cliente](reports/stage3_metrics.it.md) e nel [rapporto sulle regole](reports/stage4_policy.it.md).
+
+## Licenza
+
+Distribuisco il codice e la documentazione con [licenza MIT](LICENSE). Il dataset esterno di Kaggle resta soggetto alle proprie condizioni di uso.

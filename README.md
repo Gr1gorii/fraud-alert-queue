@@ -89,3 +89,7 @@ Explanations cover the union of the model review queues at a 20% share of all da
 ## Data
 
 The data comes from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data) and is not included in the repository. Exact results remain in the [baseline report](reports/baseline_metrics.md), [client-history report](reports/stage3_metrics.md), and [policy report](reports/stage4_policy.md).
+
+## License
+
+I license the code and documentation under the [MIT License](LICENSE). The external Kaggle dataset remains subject to its own terms.
