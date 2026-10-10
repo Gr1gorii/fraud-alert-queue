@@ -69,6 +69,7 @@ class MakeReportsTests(unittest.TestCase):
                  patch("src.make_reports.report_text", side_effect=lambda *args: texts[args[4]]), \
                  patch("src.make_reports.plot_figures"), \
                  patch("src.make_reports.plot_stage3_figures"), \
+                 patch("src.make_reports.plot_diagrams") as diagrams, \
                  patch("src.make_reports.write_stage3_reports"), \
                  patch("src.make_reports.write_stage4_reports"), \
                  patch("lightgbm.LGBMClassifier.fit", side_effect=AssertionError("No fitting during report refresh.")) as fit, \
@@ -77,6 +78,9 @@ class MakeReportsTests(unittest.TestCase):
             self.assertIs(returned, saved)
             load.assert_called_once_with(root.resolve())
             fit.assert_not_called()
+            self.assertEqual(diagrams.call_count, 1)
+            self.assertIs(diagrams.call_args.args[0], saved["analysts"])
+            self.assertEqual(diagrams.call_args.args[1], root.resolve() / "reports/figures")
             self.assertEqual((root / "reports/baseline_metrics.md").read_text(), texts["en"])
             self.assertEqual((root / "reports/baseline_metrics.it.md").read_text(), texts["it"])
             self.assertFalse((root / "data").exists())

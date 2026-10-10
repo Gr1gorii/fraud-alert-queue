@@ -17,20 +17,13 @@ A bank cannot review every card payment, so analysts check a small share each da
 
 Daily averages over 45 test days for **Blocking rule + model with fraud history** with 6 analysts; values are rounded independently.
 
-```mermaid
-flowchart TD
-    A["New card payments<br/>2,817 per day"] --> B{"Known fraud on this client<br/>from a payment 30+ days old?"}
-    B -- "yes: 26" --> C["Blocked automatically<br/>15 fraud, 11 legit customers"]
-    B -- "no: 2,792" --> D["LightGBM scores fraud risk<br/>payment + client history"]
-    D --> E["Sorted by score"]
-    E -- "top 360 = 6 analysts x 60" --> F["Analyst review<br/>63 fraud, 297 legit"]
-    E -- "rest: 2,432" --> G["Approved automatically<br/>missed fraud: USD 3,220"]
-    C --> H["Fraud stopped: USD 11,490 of 14,710 (78%)<br/>costs: USD 2,550<br/>net savings: USD 8,940"]
-    F --> H
-    F & G -. "confirmed fraud, 30+ days later" .-> B
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="reports/figures/en/payment_flow_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="reports/figures/en/payment_flow_light.png">
+  <img src="reports/figures/en/payment_flow_light.png" width="880" alt="Daily payment counts by outcome, fraud amounts stopped and missed in USD, and net savings after costs.">
+</picture>
 
-The dashed arrow is the only feedback loop: confirmed fraud feeds the blocking rule, and the model is not retrained during the test period.
+The dashed arrow shows confirmed client fraud updating the blocking rule after a 30-day label delay; the model stays fixed during the test period.
 
 ## How it works
 
@@ -62,19 +55,11 @@ Python 3.12+ is required. The two competition training CSVs belong in `data/raw/
 
 `src.run_stage3` coordinates loading, client features, splitting and training, and saves their outputs; the later scripts use those saved files.
 
-```mermaid
-flowchart LR
-    A["Kaggle training CSVs"] --> B["src/load.py"]
-    B -- "joined data; train.parquet" --> C["src/features.py"]
-    C -- "client history; train_stage3.parquet" --> D["src/split.py"]
-    D -- "train / validation / test" --> E["src/train.py<br/>src/run_stage3.py"]
-    E -- "scores + client feature table" --> F["src/policy.py<br/>src/run_stage4.py<br/>block, review, approve + USD costs"]
-    F -- "policy + cost CSVs" --> G["src/make_reports.py<br/>reports + figures"]
-    E -- "scores + metric CSVs<br/>client features + raw schema" --> G
-    E -- "features + scores<br/>model + categories" --> H["src/explain.py"]
-    F -- "stage4_decisions.parquet" --> I["app.py"]
-    H -- "stage5_explanations.parquet" --> I
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="reports/figures/en/pipeline_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="reports/figures/en/pipeline_light.png">
+  <img src="reports/figures/en/pipeline_light.png" width="880" alt="Three stages and saved files: prepare and train, create decisions and explanations, then show the queue and refresh reports.">
+</picture>
 
 `src.make_reports` refreshes the English and Italian reports and figures from saved results.
 
@@ -87,6 +72,7 @@ python -m src.run_baseline
 python -m src.run_stage3
 python -m src.run_stage4
 python -m src.explain
+python -m src.make_reports
 python -m unittest discover -s tests -v
 streamlit run app.py
 ```

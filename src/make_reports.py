@@ -6,6 +6,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from .display import reference_team
+from .diagrams import plot_diagrams
 from .evaluate import evaluate_predictions, evaluate_share_predictions, plot_figures, plot_stage3_figures
 from .features import client_sanity
 from .load import PROJECT_ROOT
@@ -107,6 +108,7 @@ def main(project_root=PROJECT_ROOT):
                          saved["summaries"], saved["feature_count"], saved["absolute"])
     write_stage4_reports(root, saved["results"], saved["curve"], saved["sensitivity"],
                          saved["marginal"], saved["analysts"])
+    plot_diagrams(saved["analysts"], reports / "figures")
     print("Reports and figures refreshed from saved results without fitting models.")
     print(json.dumps(saved_summary(saved), indent=2))
     return saved
