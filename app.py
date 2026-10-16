@@ -3,16 +3,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.demo import format_number, load_demo_data, prepare_demo, queue_display, review_queue, staff_figure, staff_metrics
+from src.demo import demo_paths, format_number, load_demo_data, prepare_demo, queue_display, review_queue, staff_figure, staff_metrics
 from src.display import money, policy_name, reference_team
 from src.policy import ALERTS_PER_ANALYST_PER_DAY, FALSE_BLOCK_COST_USD, REVIEW_COST_USD, REVIEW_FRICTION_USD
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 PAGE_ROWS = 10
-INPUTS = (
-    PROJECT_ROOT / "data/processed/stage4_decisions.parquet",
-    PROJECT_ROOT / "data/processed/stage5_explanations.parquet",
-)
+INPUTS = demo_paths(PROJECT_ROOT)
 TEXT = {
     "en": {
         "title": "Fraud alert queue", "analysts": "Analysts", "policy": "Policy",

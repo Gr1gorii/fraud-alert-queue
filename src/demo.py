@@ -67,12 +67,16 @@ def _check_explanations(df, explanations):
             raise ValueError("Positive contributions need complete reasons; padded slots must be blank.")
 
 
-def load_demo_data(project_root):
+def demo_paths(project_root):
     root = Path(project_root)
-    paths = (
-        root / "data/processed/stage4_decisions.parquet",
-        root / "data/processed/stage5_explanations.parquet",
-    )
+    folder = root / "data/processed"
+    if not (folder / "stage4_decisions.parquet").exists() and (root / "demo/stage4_decisions.parquet").exists():
+        folder = root / "demo"
+    return folder / "stage4_decisions.parquet", folder / "stage5_explanations.parquet"
+
+
+def load_demo_data(project_root):
+    paths = demo_paths(project_root)
     for path in paths:
         if not path.is_file():
             raise FileNotFoundError(f"Required saved file: {path}.")

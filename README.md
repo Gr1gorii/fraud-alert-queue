@@ -3,6 +3,8 @@
 [English](README.md) | [Italiano](README.it.md)
 
 A bank cannot review every card payment, so analysts check a small share each day. I built a queue that decides which payments they see and measured the simulated savings from each analyst.
+Live app: [Fraud alert queue](https://gr1gorii-fraud-alert-queue.streamlit.app/)
+
 
 ## Results (45 test days, USD)
 
@@ -88,8 +90,10 @@ Explanations cover the union of the model review queues at a 20% share of all da
 
 ## Data
 
-The data comes from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data) and is not included in the repository. Exact results remain in the [baseline report](reports/baseline_metrics.md), [client-history report](reports/stage3_metrics.md), and [policy report](reports/stage4_policy.md).
+The data comes from the [Kaggle IEEE-CIS Fraud Detection competition](https://www.kaggle.com/competitions/ieee-fraud-detection/data) and the raw training tables are not included in the repository. Exact results remain in the [baseline report](reports/baseline_metrics.md), [client-history report](reports/stage3_metrics.md), and [policy report](reports/stage4_policy.md).
 
 ## License
 
 I license the code and documentation under the [MIT License](LICENSE). The external Kaggle dataset remains subject to its own terms.
+
+The raw competition training tables are not included. The public app uses the saved test decisions and bilingual explanations in `demo/`; it trains no models.
