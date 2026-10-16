@@ -3,7 +3,7 @@
 [English](README.md) | [Italiano](README.it.md)
 
 Una banca non può controllare ogni pagamento con carta: gli analisti ne esaminano una piccola quota ogni giorno. Ho costruito una coda che sceglie quali pagamenti mostrare e misurato il risparmio simulato di ciascun analista.
-App online: [Coda dei controlli antifrode](https://gr1gorii-fraud-alert-queue.streamlit.app/)
+App online: [Coda dei controlli antifrode](https://gr1gorii-fraud-alert-queue.streamlit.app/) · [Apri la dashboard](https://gr1gorii-fraud-alert-queue.streamlit.app/~/+/)
 
 
 ## Risultati (45 giorni di test, USD)

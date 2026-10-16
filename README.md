@@ -3,7 +3,7 @@
 [English](README.md) | [Italiano](README.it.md)
 
 A bank cannot review every card payment, so analysts check a small share each day. I built a queue that decides which payments they see and measured the simulated savings from each analyst.
-Live app: [Fraud alert queue](https://gr1gorii-fraud-alert-queue.streamlit.app/)
+Live app: [Fraud alert queue](https://gr1gorii-fraud-alert-queue.streamlit.app/) · [Open dashboard](https://gr1gorii-fraud-alert-queue.streamlit.app/~/+/)
 
 
 ## Results (45 test days, USD)
